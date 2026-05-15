@@ -265,6 +265,17 @@ When a coding agent **edits git**, treat `publishedConfig` as the same shape the
 | `outputIntegration` | Full output integration object: connectors, `resultSets`, `dataLists`, `pipelineListBindings`, Airtable/Notion ids, etc. (see `OutputIntegrationConfig` in the same types file). |
 | `outputTabViewerDefaultsByUserId` | Per-user Output tab defaults (`defaultPipelineId`, `defaultListByPipelineId`); **merged from draft** into git `publishedConfig` for visibility in repo. |
 
+#### Agent topology (derived from `formUi`)
+
+The active agent architecture is **implicit** in `publishedConfig` — it is not a separate top-level key. The Configure modal's **Agents** panel visualises it read-only:
+
+| `formUi.style` value | Architecture |
+|----------------------|-------------|
+| `"shopping_cart"` | Supervisor + Planner + Cart Builder + Reviewer subagents |
+| `"default"` or omitted | Single chat agent |
+
+When `formUi.style` is `"shopping_cart"` the backend (`chat-agent.factory.ts`) automatically registers the full cart tool suite (`propose_cart_bundle`, `stage_cart_bundle`, `add_to_cart`, `remove_from_cart`, `clear_cart`, `get_cart_checkout_requirements`, `checkout_cart`). To change the architecture, set `formUi.style` and sync — no additional field is required.
+
 **Secrets:** Do not commit raw API keys, Twilio auth tokens, or private LiveKit secrets when avoidable; the product often uses **reference ids** (`*KeyId`, `*CredentialId`) pointing at user-stored credentials.
 
 ---
