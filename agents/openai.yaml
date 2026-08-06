@@ -1,0 +1,5 @@
+interface:
+  display_name: "Digital Twin Page"
+  short_description: "Edit digital twin chat-config.json."
+  brand_color: "#2563EB"
+  default_prompt: "Use $digital-twin-page to update assets/chat-config.json for this digital twin page."

@@ -1,14 +1,57 @@
 ---
 name: digital-twin-page
-description: Maintain git-backed digital twin page state via assets/chat-config.json — display profile (pageProfile), chat appearance (chatEmbedConfig), and published AI config (publishedConfig).
+description: "Maintain git-backed digital twin page state via assets/chat-config.json — display profile (pageProfile) and published AI config (publishedConfig). Embed appearance moved to assets/embed-config.json."
 ---
 
 # Digital Twin Page Skill
 
 ## Goal
-Maintain one digital twin page configuration per repository. The `assets/chat-config.json` file is the source of truth for the page's **display profile** (`pageProfile`: title, description, avatar, banners, tags, taxonomy), **chat appearance** (`chatEmbedConfig`: hero, theme, public about sections, conversion, backgrounds), and **published AI runtime** (`publishedConfig`: assistant name, prompts, voice, connectors, tools, etc.) when a git repository is connected.
+Maintain one digital twin page configuration per repository. The `assets/chat-config.json` file is the source of truth for the page's **display profile** (`pageProfile`: title, description, avatar, banners, tags, taxonomy) and **published AI runtime** (`publishedConfig`: assistant name, prompts, voice, connectors, tools, etc.) when a git repository is connected.
+
+Embed appearance is no longer owned by this file. For hero copy, themes, backgrounds, public about panels, conversion blocks, and widget appearance, use the separate embed config skill and edit `assets/embed-config.json`.
 
 This skill scope is **only** `chat-config.json` and its contract. Workflow endpoint bindings and task orchestration for team agents are covered by the **team-agents** skill (`server/skills/team-agents/`), not this repository scaffold.
+
+## Using this skill in coding agents
+
+Gabriel Operator skills are designed for Claude Code, Codex, Cursor, Hermes, OpenClaw, and any agent that supports skill packs. Work in the git-backed digital twin page repository connected to your Gabriel page.
+
+### Install the skill pack
+
+| Agent | Install |
+|-------|---------|
+| **Claude Code** | `npx skills add go-code-bot/go-digital-twin-page-skills` |
+| **Codex** | `codex plugin marketplace add Gabriel-Operator/gabriel-operator-coding-agent-plugin --sparse .agents/plugins` then install the Gabriel Operator plugin |
+| **Cursor** | `npx github:go-code-bot/go-digital-twin-page-skills add ./my-digital-twin-page` or copy into `.cursor/skills/digital-twin-page/` |
+| **Hermes / generic CLI** | `npx github:go-code-bot/go-digital-twin-page-skills add ./my-digital-twin-page` |
+| **OpenClaw** | `npx skills add go-code-bot/go-digital-twin-page-skills` then `openclaw gateway connect --url https://your-openclaw-gateway` |
+| **Gabriel Operator monorepo** | `cp -R server/skills/digital-twin-page ./your-git-repo/` |
+
+Alternative curl installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/go-code-bot/go-digital-twin-page-skills/main/install.sh | bash
+```
+
+### Modify with your coding agent
+
+1. Open the git-backed digital twin page repository.
+2. Tell your agent: *"Read `SKILL.md` and update `assets/chat-config.json` — `pageProfile` (title, description, avatar, banners, tags) and/or `publishedConfig` (assistant name, prompts, voice, connectors, tools) for \<describe the change\>. Do not edit embed appearance here; use `assets/embed-config.json` via the digital-twin-embed skill."*
+3. Preserve `schemaVersion`, `pageId`, and `updatedAt` conventions documented below.
+4. Commit and push to the default branch.
+
+**Example prompts:**
+- *"Update the twin's system prompt and first message for a grocery-shopping persona."*
+- *"Change the page title, description, and profile picture URL in pageProfile."*
+- **OpenClaw:** *"Read SKILL.md, update assets/chat-config.json for this twin, validate the JSON shape, and commit the changes."*
+
+### Sync to Gabriel
+
+1. Commit and push `assets/chat-config.json` to the default branch.
+2. Gabriel pulls the file into the live page database projection automatically on sync, or use **Sync to Git** from the digital twin Git binding modal in the UI.
+3. For edits made in the UI first, use **Sync to Git** to push the current database state back to the repository.
+
+**Optional — run via dedicated computer or managed agents:** When `computerConfig` is enabled or a supervisor has a sandbox provider configured, your twin can execute skill mentors in a sandbox harness. See **Dedicated Computer** and **Gemini Antigravity Managed Agents** below for runtime paths; those are triggered from Gabriel after config sync, not from local CLI alone.
 
 ## Canonical Files
 - `/SKILL.md`
@@ -16,7 +59,7 @@ This skill scope is **only** `chat-config.json` and its contract. Workflow endpo
 - `/cli.js`, `/install.sh`, `/package.json` — optional CLI pack to scaffold this tree into another repo (publish `go-digital-twin-page-skills` or copy from monorepo)
 - `/scripts/`
 - `/references/`
-- `/assets/chat-config.json` — unified snapshot for profile + embed + publish (this document)
+- `/assets/chat-config.json` — unified snapshot for profile + publish (this document)
 
 ## Minimal payload example
 `/assets/chat-config.json` is a single JSON object. A typical file looks like:
@@ -25,13 +68,6 @@ This skill scope is **only** `chat-config.json` and its contract. Workflow endpo
 {
   "schemaVersion": 1,
   "pageId": "<page-id>",
-  "chatEmbedConfig": {
-    "heroTitle": "...",
-    "heroSubtitle": "...",
-    "theme": "emerald",
-    "themeMode": "light",
-    "showThemeToggle": true
-  },
   "publishedConfig": {
     "name": "...",
     "firstMessage": "...",
@@ -61,12 +97,12 @@ Optional keys the backend may add or preserve when syncing:
 
 ## Chat configuration reference (`assets/chat-config.json`)
 
-Use this section when editing the file by hand, generating patches, or reviewing diffs. **Ground truth in code:** TypeScript type `ChatConfigPayload` in `server/src/services/digital-twin-page-git/types.ts`; `chatEmbedConfig` shape follows `ChatEmbedAppearanceConfig` in `app/utils/chatEmbedAppearance.ts`; `publishedConfig` follows the page’s stored publish payload (same conceptual shape as `DigitalTwinConfig` in `app/routes/teams/$teamSlug/team-workspaces/$unitSlug/components/configureDigitalTwin.types.ts`).
+Use this section when editing the file by hand, generating patches, or reviewing diffs. **Ground truth in code:** TypeScript type `ChatConfigPayload` in `server/src/services/digital-twin-page-git/types.ts`; `publishedConfig` follows the page’s stored publish payload (same conceptual shape as `DigitalTwinConfig` in `app/routes/teams/$teamSlug/team-workspaces/$unitSlug/components/configureDigitalTwin.types.ts`).
 
 ### Validation rules (backend)
 - **`schemaVersion`** must be `1` for current writers/readers.
 - **`pageId`** must exactly match the Mongo page id bound to this git repo; otherwise git reads may be rejected as invalid.
-- **`chatEmbedConfig`** and **`publishedConfig`** are stored as JSON objects; unknown nested keys are generally preserved on round-trip unless the product strips them on save.
+- **`publishedConfig`** is stored as a JSON object; unknown nested keys are generally preserved on round-trip unless the product strips them on save.
 - **`pageProfile`** on **pull** is filtered to an allowlist and typed (see `pageProfile`); unknown keys are **ignored** for safety.
 
 ### Root object — every top-level key
@@ -75,7 +111,6 @@ Use this section when editing the file by hand, generating patches, or reviewing
 |-----|----------|---------|
 | `schemaVersion` | yes | Protocol version; use `1`. |
 | `pageId` | yes | Id of the digital twin page this file belongs to. |
-| `chatEmbedConfig` | yes | Public chat **chrome**: hero copy, theme, backgrounds, optional structured “about” and conversion marketing blocks inside the embed. |
 | `publishedConfig` | yes | **Published assistant** runtime: prompts, model, voice, connectors, output integration, etc. (see dedicated section). |
 | `pageProfile` | optional on old files; written on new syncs | **Page document display** fields (title, description, avatar, banners, tags) mirrored for git editing. |
 | `endpointSummaries` | optional | Non-authoritative list of `{ "id": string, "name": string, "isPrimary"?: boolean }` for UI/diff context. Live workflow endpoints are **not** defined here. |
@@ -87,13 +122,13 @@ Use this section when editing the file by hand, generating patches, or reviewing
 
 ### `pageProfile` — every key (allowlisted)
 
-These keys mirror the **public page record** (not the chat column’s rich “about” JSON—that lives under `chatEmbedConfig.about`). On sync from DB, all keys are always present for stable diffs. On **pull from git**, only these keys are applied; types must match or the key is skipped.
+These keys mirror the **public page record**. On sync from DB, all keys are always present for stable diffs. On **pull from git**, only these keys are applied; types must match or the key is skipped.
 
 | Key | Type | What to change |
 |-----|------|----------------|
 | `title` | `string` | Public page / twin headline (SEO, cards, layout). |
 | `description` | `string` | Short description (SEO, summaries). |
-| `longDescription` | `string` | Longer plain-text description for the **page**; distinct from structured about sections in `chatEmbedConfig.about`. |
+| `longDescription` | `string` | Longer plain-text description for the **page**. |
 | `profilePicture` | `string \| null` | URL (or null) for avatar / brand image on the page shell. |
 | `bannerImage` | `string \| null` | Banner image URL, or null. |
 | `bannerType` | `"image" \| "gradient" \| null` | How the banner is rendered when present. |
@@ -105,69 +140,9 @@ These keys mirror the **public page record** (not the chat column’s rich “ab
 
 ---
 
-### `chatEmbedConfig` — every documented key
+### Embed appearance moved
 
-Type: `ChatEmbedAppearanceConfig` (`app/utils/chatEmbedAppearance.ts`). All keys are **optional** at the type level; the app merges with defaults when rendering.
-
-#### Theme and typography
-| Key | Type | What to change |
-|-----|------|----------------|
-| `theme` | palette name string | Named palette for primary/secondary/accent (e.g. values allowed by `PALETTES` in the app—`purple`, `emerald`, etc.). Persisted from chat publish UI as `theme`, not `selectedPalette`. |
-| `fontFamily` | enum string | Built-in font stack key from `FONT_FAMILIES`. |
-| `googleFontFamily` | `string` | Optional Google Font family name; overrides `fontFamily` when set. |
-| `headingColor` | palette color name or `null` | Solid accent for hero heading instead of tri-color gradient. |
-| `headingMonochrome` | `boolean` | When true, hero heading uses monochrome treatment in light/dark mode. |
-| `themeMode` | `"light" \| "dark"` | Default embed chrome mode. |
-| `showThemeToggle` | `boolean` | Whether users can switch light/dark in the embed. |
-| `translationEnabled` | `boolean` | Enables translation affordances where the product supports them. |
-| `defaultLanguage` | `string` | Default language code for translated UI strings. |
-
-#### Hero and opening copy
-| Key | Type | What to change |
-|-----|------|----------------|
-| `heroTitle` | `string` | Main headline above the chat. |
-| `heroSubtitle` | `string` | Subheadline under the title. |
-| `openingStatements` | `string[]` | Optional rotating short lines (product-dependent usage). |
-
-#### Backgrounds
-`ChatEmbedBackground` is `{ "type": "gradient" \| "image" \| "video", "value": string }` where `value` is a CSS gradient, image URL, or video URL/data URL as supported by the app.
-
-| Key | Type | What to change |
-|-----|------|----------------|
-| `chatBackground` | `ChatEmbedBackground \| null` | Background behind the chat card. |
-| `pageBackground` | `ChatEmbedBackground \| null` | Full-page backdrop behind the embed. |
-| `chatBackgroundBlur` | `number` | Blur percent `0–100` for chat background. |
-| `pageBackgroundBlur` | `number` | Blur percent `0–100` for page background. |
-| `pageBackgroundOverlayOpacity` | `number` | Overlay darkness/opacity `0–100` on page background. |
-
-#### `about` — structured public “about” (`PublicAboutConfig`)
-
-Nested under `chatEmbedConfig.about`. Controls section order and copy for the marketing column / panels inside the public chat experience.
-
-| Key | Type | What to change |
-|-----|------|----------------|
-| `navLabel` | `string` | Label for the about navigation. |
-| `sectionOrder` | `string[]` | Order of section ids: `introduction`, `ingredients`, `models`, `languages`, `agent-to-agent`, `get-started`. |
-| `introduction` | object | `{ enabled, label, title, body }` — hero-style intro block. |
-| `ingredients` | object | `{ enabled, label, cards: [{ title, description, imageUrl? }] }`. |
-| `models` | object | `{ enabled, label, groups: [{ title, items: string[] }] }`. |
-| `languages` | object | `{ enabled, label, heroTitle, heroSubtitle, chips: [{ label, emoji? }] }`. |
-| `agentToAgent` | object | `{ enabled, label, headline, sourceAgents, inputs, stages: [{ title, description }], outputs, centerLabel, centerImageUrl? }`. |
-| `getStarted` | object | `{ enabled, label, studioTitle, previewImageUrl?, ctaLabel, ctaHref? }`. |
-
-Each section object includes `enabled` and `label` plus the fields above; omit or disable sections you do not want shown.
-
-#### `conversion` — public conversion funnel (`PublicConversionConfig`)
-
-Nested under `chatEmbedConfig.conversion`. Shapes are in `app/utils/publicChatConversion.ts`.
-
-| Key | Type | What to change |
-|-----|------|----------------|
-| `mode` | `"hybrid_report"` (extensible) | Which conversion experience template to use. |
-| `landing` | object | Landing hero: `enabled`, `badge`, `title`, `body`, `inputLabel`, `inputPlaceholder`, `highlights[]`. |
-| `report` | object | Long-form report layout: badges, titles, `summaryCards[]`, `timelineSteps[]`, `proofPoints[]`, `outcomes[]`, closing copy. |
-| `leadCapture` | object | Lead form: `enabled`, titles, labels, `successTitle`, `successBody`, `privacyNote`. |
-| `actions` | object | CTA strings and optional `bookingUrl`; modal copy for briefing / follow-up labels. |
+Do not add or edit `chatEmbedConfig` in `assets/chat-config.json`. It is ignored by new chat-config pulls. Use the embed config repository instead, where every initial and follow-up embed change belongs in `assets/embed-config.json` under `chatEmbedConfig`.
 
 ---
 
@@ -179,6 +154,8 @@ Nested under `chatEmbedConfig.conversion`. Shapes are in `app/utils/publicChatCo
 1. Start from the page’s `publishedConfig` document (deep-cloned).
 2. If draft `vapiAssistantConfig.outputIntegration.outputTabViewerDefaultsByUserId` exists, copy it onto `publishedConfig.outputTabViewerDefaultsByUserId`.
 3. If draft has `webSearchEnabled`, `xSearchEnabled`, or `xSearchAllowedHandles`, copy those keys onto `publishedConfig` so voice/search flags round-trip in git.
+4. If draft has `composioEnabledToolkitSlugs`, `formUi`, `chatImageUpload`, `agentTopology`, or `onboardingConfig`, copy those keys onto `publishedConfig` so Composio toolkit allowlists, chat UI, onboarding, and agent topology round-trip in git.
+5. `computerConfig` and `emailConfig` are stored directly on the page and always round-trip in `publishedConfig` when present.
 
 When a coding agent **edits git**, treat `publishedConfig` as the same shape the product uses after publish. The authoritative TypeScript interface is **`DigitalTwinConfig`** (`configureDigitalTwin.types.ts`). Below: **every field name** on that interface with a one-line meaning (optional fields marked by “optional” in prose).
 
@@ -246,7 +223,47 @@ When a coding agent **edits git**, treat `publishedConfig` as the same shape the
 | `xaiProviderId` | xAI File Search provider id. |
 | `mem0ProviderId` | mem0 memory provider id. |
 | `sandboxProviderId` | E2B sandbox provider id. |
-| `chatCommandSettings` | Which slash-commands / tools are exposed in chat UI. |
+| `chatCommandSettings` | Which slash-commands / tools are exposed in chat UI. Keys: `image`, `video`, `audio`, `search`, `deepsearch`, `deepresult`, `skillRun`; each value is `boolean`. Default for all keys is `false`. |
+| `chatCommandModels` | Per-command model overrides: `Partial<Record<ChatCommandKey, string>>`. Same keys as `chatCommandSettings`; value is a model id string. Set per-tool in the Agents column. Takes precedence over the global `llmModel` for that command. |
+| `chatCommandOptions` | Per-command extra options: `Partial<Record<ChatCommandKey, Record<string, unknown>>>`. Arbitrary key-value config per command (e.g. `video.durationSeconds`, `video.size`). Also set per-tool in the Agents column. |
+
+#### Chat UI, forms, and agents
+| Field | Purpose |
+|-------|---------|
+| `formUi` | Optional form/cart UI configuration used by the page chat surface; merged from draft so git has the active UI behavior. |
+| `onboardingConfig` | Optional first-run onboarding overlay/sheet definition used by web and mobile chat; merged from draft so git carries the shared onboarding flow. |
+| `chatImageUpload` | Optional image-upload and image-resolver configuration for chat; merged from draft into git when present. |
+| `agentTopology` | Runtime agent topology for multi-supervisor, built-in subagents, and custom subagents; merged from draft into git when present. |
+| `computerConfig` | Dedicated computer / sandbox configuration. See **Dedicated Computer** section below. |
+| `emailConfig` | Dedicated inbox configuration. See **Dedicated Inbox** section below. |
+
+##### `onboardingConfig` shape
+
+Use `publishedConfig.onboardingConfig` when a digital twin needs a guided first-run intake before or alongside normal chat.
+
+| Field | Purpose |
+|-------|---------|
+| `enabled` | Master switch for the onboarding flow. |
+| `title` / `description` | Header copy shown in the onboarding overlay or sheet. |
+| `submitButtonLabel` | Final-step submit CTA label. |
+| `successMessage` | Optional success toast/message after completion. |
+| `showLaunchIcon` | When true, the runtime may show a manual relaunch affordance. |
+| `rerunOnResubmit` | When true, reopening and submitting onboarding again reruns the configured pipeline. |
+| `pipelineId` | Pipeline to launch after submit. |
+| `transitionId` | Optional initial/manual transition to target when the pipeline run starts. |
+| `steps` | Ordered onboarding questions. |
+
+Each `steps[]` item supports:
+- `id` and `key` for stable identity.
+- `title`, optional `subtitle`, optional `placeholder`, optional `helpText`.
+- `type` in `text`, `textarea`, `email`, `url`, `number`, `single_select`, `multi_select`, `boolean`, or `location`.
+- `required` to block step progression until answered.
+- `options[]` for select-based questions as `{ value, label, description? }`.
+- `pipelineInputKey` to map the answer onto a specific pipeline input name instead of the step key.
+
+Important persistence boundary:
+- `chat-config.json` stores only the shared onboarding definition under `publishedConfig.onboardingConfig`.
+- Per-user answers, current step, and completion state are not stored in git. They live in server-side onboarding-status persistence keyed by `pageId` and `userId` so web and mobile can share progress safely.
 
 #### Composio / Arcade MCP
 | Field | Purpose |
@@ -254,9 +271,11 @@ When a coding agent **edits git**, treat `publishedConfig` as the same shape the
 | `composioChatToolsEnabled` | Toggle Composio toolkit tools in chat. |
 | `composioKeyId` | Saved Composio key reference or sentinel like `default`. |
 | `composioApiKey` | Raw key when not yet saved (avoid committing real secrets). |
-| `thirdPartyAppToolsProvider` | `"composio"` or `"arcade"`. |
+| `thirdPartyAppToolsProvider` | Legacy single-provider selector: `"composio"` or `"arcade"`. Used when only one provider is active. |
+| `enabledThirdPartyToolProviders` | Array form (newer): `Array<"composio" \| "arcade">`. Allows multiple providers to be active simultaneously. Both fields may coexist; `enabledThirdPartyToolProviders` is the authoritative list at runtime. |
+| `composioEnabledToolkitSlugs` | Composio toolkit allowlist, e.g. `["gmail"]`. Only these toolkits appear in page chat `@` mentions. For SDK-session Composio, runtime tools are loaded only for toolkit slugs explicitly mentioned in the user message. Empty or omitted means no SDK-session Composio toolkit is available until a toolkit is selected. |
 | `arcadeKeyId` | Saved Arcade key reference. |
-| `composioToolRouterMcpUrl` | Provisioned Composio MCP URL. |
+| `composioToolRouterMcpUrl` | Legacy/provisioned Composio MCP URL path. Toolkit selection uses `composioEnabledToolkitSlugs` instead. |
 | `arcadeMcpGatewayUrl` | Arcade MCP gateway URL. |
 
 #### Output integration (Airtable / Notion / native / pipelines)
@@ -265,28 +284,203 @@ When a coding agent **edits git**, treat `publishedConfig` as the same shape the
 | `outputIntegration` | Full output integration object: connectors, `resultSets`, `dataLists`, `pipelineListBindings`, Airtable/Notion ids, etc. (see `OutputIntegrationConfig` in the same types file). |
 | `outputTabViewerDefaultsByUserId` | Per-user Output tab defaults (`defaultPipelineId`, `defaultListByPipelineId`); **merged from draft** into git `publishedConfig` for visibility in repo. |
 
-#### Agent topology (derived from `formUi`)
-
-The active agent architecture is **implicit** in `publishedConfig` — it is not a separate top-level key. The Configure modal's **Agents** panel visualises it read-only:
-
-| `formUi.style` value | Architecture |
-|----------------------|-------------|
-| `"shopping_cart"` | Supervisor + Planner + Cart Builder + Reviewer subagents |
-| `"default"` or omitted | Single chat agent |
-
-When `formUi.style` is `"shopping_cart"` the backend (`chat-agent.factory.ts`) automatically registers the full cart tool suite (`propose_cart_bundle`, `stage_cart_bundle`, `add_to_cart`, `remove_from_cart`, `clear_cart`, `get_cart_checkout_requirements`, `checkout_cart`). To change the architecture, set `formUi.style` and sync — no additional field is required.
-
 **Secrets:** Do not commit raw API keys, Twilio auth tokens, or private LiveKit secrets when avoidable; the product often uses **reference ids** (`*KeyId`, `*CredentialId`) pointing at user-stored credentials.
 
 ---
 
 ## Write-Through Behaviour
-When a user edits chat appearance, configure/publish settings, or page display fields in the UI, changes are saved to the database and then synced to this file automatically (500 ms debounce where implemented). **Pull from git** overwrites the database for `chatEmbedConfig`, `publishedConfig`, and allowlisted **`pageProfile`** fields to match the file.
+When a user edits configure/publish settings or page display fields in the UI, changes are saved to the database and then synced to this file automatically (500 ms debounce where implemented). **Pull from git** overwrites the database for `publishedConfig` and allowlisted **`pageProfile`** fields to match the file. Chat embed appearance changes sync through `assets/embed-config.json`.
 
 ## Ways to apply changes
 1. **In-app editors** — UI saves to DB; debounced or explicit **Sync to Git** (e.g. from the digital twin Git binding modal) pushes current DB state, including `pageProfile`, to the default branch. That full sync also rewrites the skill tree from the platform template (including this `SKILL.md`) and, for **page-primary** repositories only, deletes legacy `assets/team-agent.json`, `assets/task-orchestration.json`, and `skills/master/SKILL.md` if they are still present from older layouts. Per-endpoint bound repos keep those workflow files.
 2. **Edit in repo** — Commit `assets/chat-config.json` on the bound branch, then use the product’s **Pull** action to hydrate the page document from git.
 3. **Automation / CI** — Pipeline or agent updates the same JSON shape; pull or webhook-driven sync must respect `pageId` and branch binding rules enforced by the backend.
+
+## Dedicated Computer (`computerConfig`)
+
+A digital twin page can expose a **dedicated computer** (sandbox runtime) to chat and skill-run commands. The author configures this in the **Computer** tab of the Connectors column; the result is stored as `computerConfig` on the page and round-trips in `publishedConfig`.
+
+### `computerConfig` shape (`DigitalTwinComputerConfig`)
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `enabled` | `boolean` | Master switch. When `false`, `/skill-run` falls back to the conventional coding-agent harness with no dedicated computer. |
+| `mode` | `"visitor_supplied" \| "author_provided" \| "hybrid"` | Computed from whether the author has pre-saved credentials. `visitor_supplied` = visitor must connect their own; `author_provided` = author credential used for all; `hybrid` = author credential saved but visitors may override. |
+| `providers` | `DigitalTwinComputerProviderType[]` | Ordered allowlist of sandbox providers the visitor may choose from. |
+| `defaultProvider` | `DigitalTwinComputerProviderType?` | Which provider is pre-selected in the visitor connection dialog. |
+| `providerCredentialIds` | `Record<provider, string>?` | Author-saved credential ids keyed by provider (stored references, not raw keys). |
+| `providerCredentialLabels` | `Record<provider, string>?` | Display labels for each saved author credential. |
+| `footerButtonLabel` | `string?` | Custom label for the computer connect button in the chat footer. |
+| `lockedModelSettings` | `boolean?` | When `true`, visitors cannot change provider, harness, or model — the author's preconfigured values are used. |
+| `preconfiguredHarnessProvider` | `"gabriel_operator" \| "openclaw" \| "hermes"?` | Harness locked for visitors when `lockedModelSettings` is `true`. |
+| `preconfiguredLlmModel` | `string?` | LLM / coding-agent model locked for visitors when `lockedModelSettings` is `true`. |
+| `preconfiguredHarnessGatewayUrl` | `string?` | OpenClaw or Hermes gateway URL locked for visitors. |
+| `autoProvisionMode` | `boolean?` | When `true`, a computer is automatically provisioned per session using the author's system credential; visitors see no setup form. |
+| `geminiTools` | `Array<"code_execution" \| "google_search" \| "url_context">?` | Gemini-specific tool subset enabled for Antigravity sessions. Defaults to all three when absent. |
+
+### Supported sandbox providers (`DigitalTwinComputerProviderType`)
+
+| Provider id | Runtime |
+|-------------|---------|
+| `gemini_managed_agents` | Gemini Antigravity — persistent managed-agent environments (see dedicated section below). |
+| `claude_managed_agents` | Claude managed-agent sandbox runtime. |
+| `openai_sandbox_agents` | OpenAI Sandbox Agents (bring-your-own OpenAI key). |
+| `e2b` | E2B code sandbox — ephemeral skill execution. |
+| `daytona` | Daytona dev-environment runtime. |
+| `blaxel` | Blaxel serverless sandbox. |
+| `modal` | Modal cloud sandbox. |
+
+Providers `e2b`, `daytona`, `blaxel`, and `modal` also support a **harness** selection (`gabriel_operator`, `openclaw`, `hermes`) and an optional gateway URL for custom routing.
+
+### Per-supervisor sandbox (`agentTopology.supervisorAgents[*]`)
+
+Each supervisor agent in `agentTopology.supervisorAgents` can optionally run its own sandbox, **independent of the global `computerConfig`**. This is configured per-card in the Agents column. When set, the supervisor's sandbox takes priority over the global computer binding for that agent's `/skill-run` execution.
+
+Additional fields on each `DigitalTwinSupervisorAgent` entry:
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `sandboxProvider` | `DigitalTwinComputerProviderType?` | Sandbox to run this supervisor in. When absent, no sandbox is used regardless of `computerConfig`. |
+| `sandboxGeminiCredentialId` | `string?` | RAG provider id (Gemini) used as the Gemini API key for this supervisor's Antigravity session. Bypasses the global computer binding when set. |
+| `sandboxApiKeyId` | `string?` | Saved user sandbox provider id for non-Gemini providers. Resolved via `SandboxProvidersService` at run time. |
+| `sandboxApiKeyLabel` | `string?` | Display label for the saved non-Gemini credential. |
+| `sandboxLlmModel` | `string?` | LLM or managed-agent model id for this supervisor's sandbox (e.g. `antigravity-preview-05-2026`, `openai/gpt-5.5`). |
+| `sandboxHarnessProvider` | `"gabriel_operator" \| "openclaw" \| "hermes"?` | Harness for `e2b`/`daytona`/`blaxel`/`modal` sandboxes. |
+| `sandboxHarnessGatewayUrl` | `string?` | Gateway URL when harness is `openclaw` or `hermes`. |
+
+**Routing logic (server, `skill-run.controller.ts`):**
+- If `sandboxProvider === "gemini_managed_agents"` and `sandboxGeminiCredentialId` is set → resolves the Gemini API key directly via `RAGProvidersService.getGeminiCredentialsForProvider`, skipping the global computer binding.
+- If `sandboxProvider === "gemini_managed_agents"` and no `sandboxGeminiCredentialId` → falls back to the global Gemini computer binding (requires the visitor to connect one via the Computer button).
+- For other sandbox providers with `sandboxApiKeyId` → resolves via `SandboxProvidersService.resolveProviderCredential` and injects as `sandboxCredentialOverride`.
+- `sandboxLlmModel`, `sandboxHarnessProvider`, `sandboxHarnessGatewayUrl` override the effective model/harness/gateway for that supervisor's run.
+
+**Example `agentTopology` entry with per-supervisor Gemini sandbox:**
+
+```json
+{
+  "agentTopology": {
+    "supervisorAgents": [
+      {
+        "id": "research-supervisor",
+        "label": "Research Supervisor",
+        "role": "supervisor",
+        "enabled": true,
+        "instructions": "Coordinate research tasks using the Gemini Antigravity environment.",
+        "sandboxProvider": "gemini_managed_agents",
+        "sandboxGeminiCredentialId": "<rag-provider-id>",
+        "sandboxLlmModel": "antigravity-preview-05-2026"
+      }
+    ]
+  }
+}
+```
+
+---
+
+## Dedicated Inbox (`emailConfig`)
+
+A digital twin page can expose a **dedicated email inbox** to chat agents. The author configures this in the **Email** tab of the Connectors column; the result is stored as `emailConfig` on the page and round-trips in `publishedConfig`.
+
+### `emailConfig` shape (`DigitalTwinEmailConfig`)
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `enabled` | `boolean` | Master switch for dedicated inbox features in chat. |
+| `mode` | `"visitor_owned" \| "author_provided" \| "hybrid"` | `visitor_owned` = each visitor connects their own inbox; `author_provided` = author's connection used for all sessions; `hybrid` = author connection saved but visitor may override. |
+| `providers` | `DigitalTwinEmailProviderType[]` | Allowed email providers. Defaults to both `["agentmail", "openmail"]`. |
+| `authorConnectionIds` | `Record<provider, string>?` | Author-saved email connection ids keyed by provider. |
+| `authorConnectionLabels` | `Record<provider, string>?` | Display labels for each saved author connection. |
+| `identityFlowEnabled` | `boolean?` | When `true`, enables the identity-verification flow before granting inbox access. |
+| `footerButtonLabel` | `string?` | Custom label for the inbox connect button in the chat footer. |
+
+### Supported email providers (`DigitalTwinEmailProviderType`)
+
+| Provider id | Description |
+|-------------|-------------|
+| `agentmail` | AgentMail — purpose-built agent inbox provider. |
+| `openmail` | OpenMail — open email protocol inbox provider. |
+
+**Secrets:** `authorConnectionIds` stores reference ids into the platform's email connection store, not raw tokens or passwords.
+
+---
+
+## Gemini Antigravity Managed Agents
+
+Digital twin pages that have a **Gemini managed agents** dedicated computer bound can register their `agentTopology` entries (supervisor agents and custom subagents) as individual Gemini managed agents via the `registerGeminiPageAgents` service function. Each registered agent is backed by the `antigravity-preview-05-2026` runtime, receives a stable ID derived from the page ID and agent ID, and is provisioned with:
+
+- A **system instruction** built from the agent's `label`, `description`, `whenToUse`, `instructions`, and `tools`.
+- An inline `.agents/AGENTS.md` that describes the agent role and instructs it to write output files to `/workspace/output/`.
+
+### Managed agent ID format
+
+```
+dt-{last-8-chars-of-pageId}-{agent-id-slug}
+```
+
+Agent IDs are alphanumeric with hyphens, max ~40 characters, stable across re-registrations.
+
+### Registering from server code
+
+```typescript
+import { registerGeminiPageAgents } from '../../services/gemini/gemini-managed-agent.service';
+
+const results = await registerGeminiPageAgents({
+  pageId: '<mongo-page-id>',
+  apiKey: '<gemini-api-key>',
+  agentTopology: publishedConfig.agentTopology,  // DigitalTwinAgentTopology
+});
+// results: Array<{ agentId, agentKey, label, success, error? }>
+```
+
+Only agents with `enabled !== false` are registered. Each call is idempotent — if the agent already exists it is deleted and recreated with the latest instructions.
+
+### Slash commands in the sandbox (`/skill-run`)
+
+The `/skill-run` endpoint resolves which sandbox to use in the following priority order:
+
+1. **Per-supervisor sandbox** — if the primary enabled supervisor in `agentTopology.supervisorAgents` has a `sandboxProvider` set, that provider is used (see **Per-supervisor sandbox** above). This takes priority over the global computer binding.
+2. **Global dedicated computer** — if `computerConfig.enabled` is `true` and the visitor has connected a runtime, that binding is used.
+3. **No sandbox** — falls back to the conventional coding-agent harness (E2B, Daytona, etc. via `sandboxProviderId`).
+
+**Gemini Antigravity path** (when resolved provider is `gemini_managed_agents`):
+
+1. The user's selected skill mentors are mounted as inline `.agents/skills/<slug>/SKILL.md` sources in the Gemini environment.
+2. `executeGeminiManagedAgent` is called with the prompt, mentor skill sources, the resolved API key, and the effective managed-agent model id (`sandboxLlmModel` from the supervisor, or the binding's `llmModel`, or `antigravity-preview-05-2026`).
+3. After completion the environment snapshot is persisted to `page_generated_media` and output files are surfaced as downloadable attachments in the `skill-run-complete` SSE event.
+4. When using the global computer binding (not a per-supervisor credential), `geminiEnvironmentId` and `geminiInteractionId` are saved back to the binding's `sessionMetadata` so subsequent runs continue in the same environment.
+
+**Conventional coding-agent path** (all other sandbox providers):
+
+Uses `executeCodingAgent` with the effective `harnessProvider`, `harnessGatewayUrl`, `llmModel`, and `sandboxCredentialOverride`. The credential override is sourced (in priority order) from: the global dedicated computer binding → the supervisor's `sandboxApiKeyId` resolved via `SandboxProvidersService`.
+
+### Running a managed agent directly (REST / SDK)
+
+```bash
+# Inline (no registration required)
+curl -X POST "https://generativelanguage.googleapis.com/v1beta/interactions" \
+  -H "x-goog-api-key: $GEMINI_API_KEY" \
+  -H "Api-Revision: 2026-05-20" \
+  -d '{
+    "agent": "antigravity-preview-05-2026",
+    "input": "Run the requested skill task",
+    "system_instruction": "<agent instructions>",
+    "environment": { "type": "remote" }
+  }'
+
+# Via registered managed agent ID
+curl -X POST "https://generativelanguage.googleapis.com/v1beta/interactions" \
+  -H "x-goog-api-key: $GEMINI_API_KEY" \
+  -H "Api-Revision: 2026-05-20" \
+  -d '{
+    "agent": "dt-abc12345-planner-supervisor",
+    "input": "Analyze the grocery list and build a complete shopping bundle.",
+    "environment": "remote"
+  }'
+```
+
+Output files written to `/workspace/output/` inside the sandbox are extracted from the environment snapshot tar and served as downloadable assets via `/api/page-builder/digital-twin-computer/:pageId/gemini-environments/:environmentId/file`.
+
+---
 
 ## Twilio Telephony
 - Digital twin pages can be used with outbound Twilio phone flows, including direct agent phone calls and run callbacks.

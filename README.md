@@ -1,6 +1,8 @@
 # Gabriel Operator — Digital Twin Page Skill
 
-Canonical skill scaffold for **git-backed digital twin page** repositories. It documents how to maintain `assets/chat-config.json` — the unified snapshot for **page profile** (`pageProfile`), **chat embed appearance** (`chatEmbedConfig`), and **published assistant runtime** (`publishedConfig`) when a page-primary repo is connected.
+Canonical skill scaffold for **git-backed digital twin page** repositories. It documents how to maintain `assets/chat-config.json` — the unified snapshot for **page profile** (`pageProfile`) and **published assistant runtime** (`publishedConfig`) when a page-primary repo is connected.
+
+Embed appearance has moved to the separate embed config scaffold, where agents edit `assets/embed-config.json`.
 
 The authoritative copy in development lives in this marketplace repo at **`server/skills/digital-twin-page/`** (this folder).
 
@@ -38,7 +40,7 @@ With a target directory:
 curl -fsSL https://raw.githubusercontent.com/go-code-bot/go-digital-twin-page-skills/main/install.sh | bash -s -- ./my-digital-twin-page
 ```
 
-### Working from the Axio Operator Marketplace monorepo
+### Working from the Gabriel Operator monorepo
 
 Until [`go-code-bot/go-digital-twin-page-skills`](https://github.com/go-code-bot/go-digital-twin-page-skills) exists on GitHub, **copy this directory** into your target repo (or publish this folder to that repo name and then use `npx` / `curl`):
 
