@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ──────────────────────────────────────────────────────────────────────────────
-# gabriel-operator digital twin page skill — curl installer
+# gabriel-operator AI Persona skill — curl installer
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/go-code-bot/go-digital-twin-page-skills/main/install.sh | bash
@@ -59,12 +59,12 @@ install_skills() {
   fi
 
   success "CLI downloaded."
-  log "Installing digital twin page skill into ${TARGET_DIR} …"
+  log "Installing AI Persona skill into ${TARGET_DIR} …"
   echo ""
 
   node "${TMP_DIR}/cli.js" add "${TARGET_DIR}"
 }
 
-header "🔧 gabriel-operator digital twin page skill installer"
+header "🔧 gabriel-operator AI Persona skill installer"
 check_node
 install_skills

@@ -94,7 +94,7 @@ async function listRepoFiles() {
 async function installSkills(targetDir, { overwrite = false } = {}) {
   const absTarget = path.resolve(process.cwd(), targetDir);
 
-  console.log(`\n\x1b[1m🔧 gabriel-operator digital twin page skills\x1b[0m`);
+  console.log(`\n\x1b[1m🔧 gabriel-operator AI Persona skills\x1b[0m`);
   console.log(`   Source : https://github.com/${OWNER}/${REPO}`);
   console.log(`   Target : ${absTarget}\n`);
 
@@ -118,6 +118,14 @@ async function installSkills(targetDir, { overwrite = false } = {}) {
 
   for (const relPath of skillFiles) {
     const destPath = path.join(absTarget, relPath);
+
+    // Persona requirements are customer-authored state. A scaffold refresh may
+    // install the starter file, but must never overwrite an existing spec.
+    if (relPath === 'assets/persona-evals.json' && fs.existsSync(destPath)) {
+      log(`Preserved (authored state): ${relPath}`, 'warn');
+      skipped++;
+      continue;
+    }
 
     if (!overwrite && fs.existsSync(destPath)) {
       log(`Skipped (exists): ${relPath}`, 'warn');
@@ -160,7 +168,7 @@ async function main() {
     console.log(pkg.version);
   } else if (command === '--help' || command === '-h') {
     console.log(`
-\x1b[1mgabriel-operator digital twin page skills CLI\x1b[0m
+\x1b[1mgabriel-operator AI Persona skills CLI\x1b[0m
 
 Usage:
   npx github:go-code-bot/go-digital-twin-page-skills [command] [target-dir]

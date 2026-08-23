@@ -1,20 +1,137 @@
 ---
 name: digital-twin-page
-description: "Maintain git-backed digital twin page state via assets/chat-config.json — display profile (pageProfile) and published AI config (publishedConfig). Embed appearance moved to assets/embed-config.json."
+description: Maintain git-backed AI Persona state and release quality via assets/chat-config.json and assets/persona-evals.json. Covers display profile, published AI config, traceability, functional evals, and candidate-gated activation. Embed appearance moved to assets/embed-config.json.
 ---
 
-# Digital Twin Page Skill
+# AI Persona Skill
+
+## Portable Git contract (schema v2)
+
+Author new and cross-environment persona assets with stable model identity:
+
+```json
+{
+  "schemaVersion": 2,
+  "resourceKey": "persona.example",
+  "publishedConfig": {
+    "agentTopology": {
+      "slashCommands": [{
+        "trigger": "/run",
+        "workflowRef": { "kind": "workflow", "resourceKey": "workflow.example.run-v2" }
+      }]
+    }
+  },
+  "pageProfile": {}
+}
+```
+
+- Never write `pageId`, `userId`, `commandId`, `automationId`, `actionId`, or any other database identifier into a portable Git definition.
+- Register the portable bundle in `references/registry.json` schema v2. It contains **exactly one Pipeline, exactly one List, and one Workflow for each distinct `workflowRef`**. Commands may share a Workflow entry. Every `workflowRef` must resolve, every Workflow row must be referenced, and at least one Workflow must reference the shared Pipeline; other Workflows may be Pipeline-independent. Every entry requires `kind`, `resourceKey`, repository URL, declared branch, asset path, an immutable `revision`, and the SHA-256 `definitionFingerprint` of the referenced JSON definition. Do not add `team_agent`, `primary`, or `dependsOn` here — extra authoring repos belong in generated `references/workspace.json`.
+- `revision` and `definitionFingerprint` are owned by **workspace publish**, which recomputes both and writes them with the matching gitlinks in one validated root commit. Run `node scripts/publish-workspace.js publish` (or Gabriel **Publish workspace**); do not hand-edit them. Creating a child repository in Gabriel only marks the workspace dirty — nothing else advances the persona lock, so a pin stays on its last published commit until you publish. Never point a fingerprint at a moving branch alone.
+- The two publishers pin from different sources, deliberately. `scripts/publish-workspace.js` pins the commit **checked out** in each submodule, because that is what you built and tested in this clone. Gabriel's server publish has no working tree and pins each child's **branch head**. After you commit and push a child they agree; they differ only when a submodule is intentionally held on an older commit.
+- A submodule sitting **behind its declared origin branch** is a normal pin and does not block publish. Publish fetches `refs/heads/<branch>` and requires the checked-out SHA to be its ancestor. A missing branch, wrong origin, commit from another branch, or local-only commit blocks publish.
+- Treat `resourceKey` as stable model identity. Gabriel allocates local page/action IDs during import and stores them only in environment-local bindings and runtime records.
+- Keep logical command triggers and workflow task/stage IDs stable; these are model identifiers, not database identifiers.
+- Run the portability validator before publishing. An unresolved dependency must fail before the Persona is activated; never guess a local ID.
+- Legacy schema v1 is same-environment compatibility only. Do not copy it between environments and do not create new v1 exports.
+
+## Persona quality contract
+
+`assets/persona-evals.json` schema version 1 is the Git-backed specification, traceability map, and functional scenario contract for this exact Persona workspace. It is independent from structural JSON validation:
+
+- **Structure** proves that schemas, refs, child pins, stages, guards, mappings, and orchestration are connected correctly.
+- **Specification coverage** proves that confirmed business requirements map to real implementation elements and reciprocal eval cases.
+- **Functional behavior** runs the production command, Task Execution, Canvas, workflow, approval, list, and pipeline runtime with isolated resources and deterministic connector fixtures.
+- **Live integrations** are optional smoke runs using real credentials and normal human approvals. They never count toward production readiness.
+
+Minimal shape:
+
+```json
+{
+  "schemaVersion": 1,
+  "requirements": [{
+    "id": "buyer-financing-required",
+    "category": "business_rule",
+    "description": "A buyer cannot become qualified without financing status.",
+    "implementedBy": [
+      { "kind": "list_column", "resourceRef": "list.buyers", "selector": "financingStatus" },
+      { "kind": "pipeline_guard", "resourceRef": "pipeline.buyer-qualification", "selector": "financing-required" }
+    ],
+    "verifiedBy": ["qualify-buyer-golden", "qualify-buyer-missing-financing"]
+  }],
+  "suites": [{
+    "id": "production-readiness",
+    "requiredForProduction": true,
+    "mode": "mock",
+    "cases": []
+  }]
+}
+```
+
+Locators are typed data, never executable grader code. Deterministic assertions cover execution status, task sequence, decisions, tool calls/forbidden calls, output text/JSON paths, list records, pipeline stages, artifacts, and no-external-side-effect proof. Subjective `rubric` assertions are advisory in v1 and cannot block production.
+
+Completeness requires an outcome for every enabled workflow-backed command, all required inputs and declared outputs, every required list field, every pipeline stage, positive and negative guard paths, approval and rejection paths, mutation field assertions, and approval/rejection/no-side-effect coverage for destructive external steps. Include at least one golden, incomplete-input, and adversarial case. Renamed or deleted implementation elements fail resolution.
+
+Mock cases receive temporary private copies of bound lists, pipelines, and record collections. Exact local resource ids are remapped only inside the trusted eval context. Internal state transitions run for real; declared connector responses replace external dispatch, and an undeclared external action fails before dispatch. Resources are hidden from ordinary list/pipeline queries, cleaned after the case, and carry expiry metadata for interrupted runs. Runs are sequential per Persona. A case may declare `"runAs": "author" | "subscriber"`; missing means legacy author execution. Subscriber runs resolve definitions as the Persona owner but execute chat commands, Canvas, approvals, lists, pipelines, outputs, memory, and artifacts as a page-bound managed subscriber with no login, billing, credits, notifications, discovery, or ordinary subscription analytics. Subscriber candidates and runs record the platform subscriber-policy version; a policy change makes prior subscriber evidence stale and requires a new candidate.
+
+Run `node scripts/validate-persona-evals.js` for repository-level contract checks. Gabriel performs the authoritative pinned-workspace validation and offers the same lifecycle through the Quality UI and Gateway tools:
+
+- `gabriel_get_persona_evals`, `gabriel_update_persona_evals`, `gabriel_validate_persona_evals`
+- `gabriel_get_persona_readiness`
+- `gabriel_run_persona_evals`, `gabriel_get_persona_eval_run`, `gabriel_list_persona_eval_runs`, `gabriel_cancel_persona_eval_run`
+
+An update uses optimistic `expectedHeadSha`, modifies only `assets/persona-evals.json`, and invalidates the previous candidate. Workspace publish creates a candidate containing the root SHA and every relevant fingerprint. Live publish materializes that evaluated Git candidate and is centrally gated on current-head equality, structural pass, coverage pass, required mock-suite pass, and Git/database parity. Any root, child pin, suite, requirement, model, runtime, registry, or workspace change makes earlier results stale. Only audited platform-admin break glass may bypass an enforced gate.
+
+Quality control is strictly opt-in through `publishedConfig.qualityControlConfig.enabled === true`. Missing or false means the seventh **Quality** tab, the owner-only live/mobile Quality views, and release gating remain disabled; this preserves legacy Persona behavior. Enable it from the create/edit Persona **Features** tab. Subscriber testing is a separate nested opt-in: `subscriberSimulationEnabled` is effective only when the parent is enabled, defaults to false, and must be written back as false when Quality is disabled. When both are enabled, every subscriber-facing command needs a required mock subscriber case and **Subscriber experience** becomes a release dimension. Owners also receive `Viewing as: Author | Subscriber simulation` in the Persona header. The preview uses a one-time, owner/page/candidate-bound session and never creates an impersonation login. Plain-text free exploration uses the exact candidate prompt/model in a tool-free subscriber lane; configured Operator and Canvas commands use fresh isolated list/pipeline copies, declared fixtures, and the production executor. Free exploration is mock-only and never satisfies readiness. Gateway tools may run `runAs: subscriber` cases but never accept actor ids or create browser previews. Once Quality is enabled, use it for Requirements, Coverage, Scenarios, and Runs. The same owner-only tab appears in the live Persona experience and links each case to Canvas. Visitors never see eval controls or data. Mobile owners can inspect actor-labelled readiness/history, run or cancel suites, and open Canvas; v1 mobile does not author the specification or interactively impersonate. Inventory-generated requirement prompts are drafts until the owner confirms them.
 
 ## Goal
-Maintain one digital twin page configuration per repository. The `assets/chat-config.json` file is the source of truth for the page's **display profile** (`pageProfile`: title, description, avatar, banners, tags, taxonomy) and **published AI runtime** (`publishedConfig`: assistant name, prompts, voice, connectors, tools, etc.) when a git repository is connected.
+Maintain one AI Persona configuration per repository. The `assets/chat-config.json` file is the source of truth for the page's **display profile** (`pageProfile`: title, description, avatar, banners, tags, taxonomy) and **published AI runtime** (`publishedConfig`: assistant name, prompts, voice, connectors, tools, etc.) when a git repository is connected.
 
 Embed appearance is no longer owned by this file. For hero copy, themes, backgrounds, public about panels, conversion blocks, and widget appearance, use the separate embed config skill and edit `assets/embed-config.json`.
 
-This skill scope is **only** `chat-config.json` and its contract. Workflow endpoint bindings and task orchestration for team agents are covered by the **team-agents** skill (`server/skills/team-agents/`), not this repository scaffold.
+This skill scope is **chat-config.json**, the portable `references/registry.json` triple, and the generated authoring graph in `references/workspace.json`. Workflow endpoint bindings and task orchestration for team agents are covered by the **team-agents** skill, which ships inside each linked team-agent repository under `references/team-agents/`. This repository owns the *depth-1 gitlink*; the team-agent repository owns its definition. Team agents are **not** portable registry rows. See **Linked repositories** below.
+
+**Slash-command debug/docs are out of scope here.** Do not create or edit `assets/slash-connections/` (or any slash-command connection debug graphs) in this repository. Those live in each command's bound **workflow** repository as `assets/slash-connections.json`, owned by the **workflow-builder** skill (`server/skills/workflow-builder/`). Runtime registration of slash commands (`publishedConfig.agentTopology.slashCommands`: trigger, label, enabled, action linkage) still round-trips in `chat-config.json` when present — that registration is not the debug graph.
+
+### Never author page/master-skill Canvas
+
+The page-backed Canvas mode (`blueprintRef: "page"`) and its page-level master-skill
+dependency are deprecated compatibility code. Coding agents must never add a master
+skill or `taskExecutionBlueprint` merely to make an Operator slash command run.
+
+Canvas task definitions belong to the command's workflow repository. There they must
+use `blueprintRef: "inline"` in every Canvas capability and terminal aggregate. Stable
+identity belongs in `canvasTask.sequenceId`; never put a page id, sequence id, product
+name, or other custom string in `blueprintRef`. This page repository owns only slash
+command registration and must not duplicate the Canvas task catalog.
+
+For a default first-use command, keep the command enabled and use
+`launchPolicy.invocationPolicy: "first_use"`, `autoOpenIntake: true`, a bumped
+`commandVersion`, and `firstUseCompletion: "execution_started"`. Only one
+automatic command is allowed per persona. The command must use the standard
+`operator_action` workflow path; never add page-level form discovery, direct
+submission tools, acquisition recipes, or Canvas task definitions here.
+
+Existing-case identity is also outside Persona configuration. Do not add a locator
+column, URL-normalization rule, or `existingCasePolicy` object to
+`assets/chat-config.json` or the slash-command details UI. The command's workflow
+Canvas references a stable `existingCasePolicyId`; the selected Pipeline owns and
+configures that policy under **Pipeline → Manage → Config → Existing-case detection**.
+Changing `form_url` to another resource locator therefore belongs to the Pipeline
+and its bound List schema, not to `PersonaOperatorSlashCommandsPanel`.
+
+Persona Chat apps configured in the Identity/Reach editor may be reused by a
+workflow-authored Canvas task for `responseCollection.mode: "channels_only"`.
+That runtime use is runner-specific: it requires the authenticated runner's
+linked external identity and sends a single-use questionnaire URL scoped to one
+Canvas decision. It must not inject the questionnaire or its answers into the
+Persona's general chat conversation. The channel list belongs to the workflow
+task, while `chat-config.json` continues to own only the normal Chat app
+configuration and slash-command registration.
 
 ## Using this skill in coding agents
 
-Gabriel Operator skills are designed for Claude Code, Codex, Cursor, Hermes, OpenClaw, and any agent that supports skill packs. Work in the git-backed digital twin page repository connected to your Gabriel page.
+Gabriel Operator skills are designed for Claude Code, Codex, Cursor, Hermes, OpenClaw, and any agent that supports skill packs. Work in the git-backed AI Persona repository connected to your Gabriel page.
 
 ### Install the skill pack
 
@@ -35,20 +152,90 @@ curl -fsSL https://raw.githubusercontent.com/go-code-bot/go-digital-twin-page-sk
 
 ### Modify with your coding agent
 
-1. Open the git-backed digital twin page repository.
-2. Tell your agent: *"Read `SKILL.md` and update `assets/chat-config.json` — `pageProfile` (title, description, avatar, banners, tags) and/or `publishedConfig` (assistant name, prompts, voice, connectors, tools) for \<describe the change\>. Do not edit embed appearance here; use `assets/embed-config.json` via the digital-twin-embed skill."*
-3. Preserve `schemaVersion`, `pageId`, and `updatedAt` conventions documented below.
-4. Commit and push to the default branch.
+1. Clone the persona repository and run `git submodule update --init`.
+2. Read `references/workspace.json` (generated authoring graph) and `references/registry.json` (portable Workflow + Pipeline + List only).
+3. Edit the **owning child** repository — `assets/chat-config.json` here, or the matching submodule under `references/`. Do not hand-edit `workspace.json`.
+4. Preserve `schemaVersion: 2`, `resourceKey`, portable refs, and logical command identities. Never add a local `pageId`, `appId`, `endpointId`, or `actionId` to Git.
+5. Commit and push **the child first**. Then publish the workspace lock:
+
+```bash
+node scripts/publish-workspace.js validate
+node scripts/publish-workspace.js publish
+```
+
+6. Validate `assets/persona-evals.json`, publish the workspace candidate, run required mock suites, and repair/re-publish/re-run after any failure. Only then offer live activation. A successful workspace publish alone is not production readiness.
+
+A failed validate leaves the currently published persona root untouched. Publish is
+all-or-nothing: it plans the pinned registry and manifest in memory, and if any
+step fails — including the commit itself — it restores `HEAD`, the index, and the generated
+files rather than leaving the tree half-written.
+
+**Every child must be a clean, published checkout.** Publish refuses a child with
+uncommitted changes, no `origin`, or a commit that exists only in your clone. A pin sitting
+*behind* origin is fine — that is what a pin is; only unpushed commits block, because nobody
+else could resolve them.
+
+**Validation is split by trust.** New scaffolds declare their validator scripts in the
+root `gabriel.workspace.json`; only the fixed `node` and `tsx` runners are accepted.
+Locally, each child's declared validators run
+(`validate-pipeline.js`, `validate-list.js` plus `validate-records.js` when the list has
+rows, `validate-workflow.ts`, and both `validate-team-agent.ts` and
+`validate-task-orchestration.ts`), because you already trust your own clone. A malformed
+marker, wrong kind, or missing required script/asset fails. An unmarked legacy repository
+runs the conventional validator when present and propagates failures; if none exists it
+continues with a prominent compatibility warning. `SKILL.md` is not a scaffold marker.
+`scripts/validate-portable-bundle.js` additionally checks the whole
+Persona → Workflow → Pipeline → List chain, not just each file's header. The server never
+executes child scripts — it performs the equivalent structural checks on JSON read at the
+pinned revision.
+
+### Removing a repository from the workspace
+
+`status` reports stale managed links. `validate` and `publish` refuse them until you run:
+
+```bash
+node scripts/publish-workspace.js prune
+```
+
+`prune` validates the prior generated node, direct kind path, mode-160000 tree/index entry,
+`.gitmodules` path and canonical URL, and exclusion from the current graph and portable
+registry before changing anything. It removes only the gitlink and matching `.gitmodules`
+section in one rollback-safe commit. The physical checkout is always preserved, including
+when it contains untracked or unpushed work.
+
+### Working across the whole graph
+
+One clone reaches every definition and every skill pack, so a change that spans the
+Pipeline, its List, and the Workflow that maps between them can be written and validated
+in a single working tree:
+
+```bash
+git clone <persona-repo> && cd <persona-repo>
+git submodule update --init
+```
+
+1. Read the child `SKILL.md` for whichever asset you are editing — each submodule ships
+   its own skill pack (`references/pipelines/*/SKILL.md`, `references/workflows/*/SKILL.md`
+   with its `actions/` guides, `references/team-agents/*/SKILL.md` with its `nodes/` guides).
+2. Make the change in the child repository that owns the definition. Keep the linked
+   assets consistent as you go: a Pipeline column that a Workflow maps into must exist in
+   the bound List schema too.
+3. Run each child's validator before committing (`node scripts/validate-pipeline.js`,
+   `node scripts/validate-list.js`, `npx tsx scripts/validate-workflow.ts`).
+4. **Commit child-first, then publish the workspace.** Commit and push inside each submodule. Then run `node scripts/publish-workspace.js publish` so this repository's gitlinks, `workspace.json`, and portable fingerprints advance in **one** root commit. Do not hand-bump `revision` rows or treat a persona-root commit as an atomic multi-repo publish.
+5. Extra workflows and team agents live in generated `references/workspace.json`. They are same-environment authoring. Cross-environment import materializes only the registry Workflows plus its single Pipeline and List.
+
+A single working tree is what this buys you — not atomic commits across remotes. Changing a Pipeline and its Workflow together is still two child commits plus one workspace publish here.
 
 **Example prompts:**
 - *"Update the twin's system prompt and first message for a grocery-shopping persona."*
 - *"Change the page title, description, and profile picture URL in pageProfile."*
-- **OpenClaw:** *"Read SKILL.md, update assets/chat-config.json for this twin, validate the JSON shape, and commit the changes."*
+- **OpenClaw:** *"Clone the persona, run git submodule update --init, read workspace.json, edit the owning child, commit and push that child, then run node scripts/publish-workspace.js publish."*
 
 ### Sync to Gabriel
 
 1. Commit and push `assets/chat-config.json` to the default branch.
-2. Gabriel pulls the file into the live page database projection automatically on sync, or use **Sync to Git** from the digital twin Git binding modal in the UI.
+2. Gabriel pulls the file into the live page database projection automatically on sync, or use **Sync to Git** from the AI Persona Git binding modal in the UI.
 3. For edits made in the UI first, use **Sync to Git** to push the current database state back to the repository.
 
 **Optional — run via dedicated computer or managed agents:** When `computerConfig` is enabled or a supervisor has a sandbox provider configured, your twin can execute skill mentors in a sandbox harness. See **Dedicated Computer** and **Gemini Antigravity Managed Agents** below for runtime paths; those are triggered from Gabriel after config sync, not from local CLI alone.
@@ -58,16 +245,93 @@ curl -fsSL https://raw.githubusercontent.com/go-code-bot/go-digital-twin-page-sk
 - `/README.md` — human overview; **installation** via `npx` / `curl` / `install.sh` (same pattern as `server/skills/team-agents/`)
 - `/cli.js`, `/install.sh`, `/package.json` — optional CLI pack to scaffold this tree into another repo (publish `go-digital-twin-page-skills` or copy from monorepo)
 - `/scripts/`
-- `/references/`
+- `/references/` — linked repositories, as git submodules (see **Linked repositories** below)
 - `/assets/chat-config.json` — unified snapshot for profile + publish (this document)
+- `/assets/persona-evals.json` — confirmed requirements, typed traceability, deterministic scenarios, and release suites
+
+## Linked repositories (`references/`)
+
+Every repository this AI Persona depends on is linked into `references/` as a **git
+submodule**, so one clone reaches the whole workspace — every definition and every skill
+pack. Links are written by the product when the author creates the child repository —
+never add or edit `.gitmodules` by hand.
+
+```text
+references/registry.json               ← portable: distinct workflows + one pipeline + one list
+references/workspace.json              ← generated depth-1 authoring graph (ignored by import)
+references/README.md                   ← generated from workspace.json
+references/chat-config-contract.json   ← machine-readable contract for chat-config.json
+references/pipelines/<resource-key>/   ← submodule: pipeline-builder repo
+references/lists/<resource-key>/       ← submodule: list-builder repo
+references/workflows/<resource-key>/   ← submodule: workflow-builder repo (primary + extras, once each)
+references/team-agents/<key>/          ← submodule: git-bound team agents only
+```
+
+```bash
+git submodule update --init
+```
+
+**All links are depth 1.** Every repository — including a team agent's child workflows —
+is a direct submodule of this Persona, never a submodule of another submodule, so
+`--recursive` is not required and a workflow reached by two team agents appears once.
+The dependency *graph* is recorded in generated `references/workspace.json`, not by
+directory nesting and not by extra rows on `registry.json`.
+
+Submodule directories are named after the stable **resource key** when portable, or the
+git remote slug when the child is workspace-only. The readable name lives in
+`workspace.json` and the generated `references/README.md` table.
+
+### Portable registry vs authoring graph
+
+`registry.json` is the **strict portable bundle**. Import materializes its distinct
+referenced Workflows plus exactly one Pipeline and one List. Do not add team agents or
+same-environment extra workflows to it.
+
+`workspace.json` is **generated**. Authors and agents do not hand-edit it. Publish
+(Gabriel **Publish workspace** or `node scripts/publish-workspace.js publish`) regenerates
+it after validation. Failed validation does not write a persona root commit.
+
+```json
+{
+  "schemaVersion": 2,
+  "repos": [
+    {
+      "kind": "pipeline",
+      "resourceKey": "pipeline.example.filer-v2",
+      "displayName": "Filer pipeline",
+      "path": "references/pipelines/pipeline-example-filer-v2",
+      "repositoryUrl": "https://github.com/me/filer-pipeline.git",
+      "branch": "main",
+      "assetPath": "assets/pipeline.json",
+      "revision": "bfef019f3e71d337577a2de75bf3cbea0b12c7fb",
+      "definitionFingerprint": "aa9a5793…"
+    }
+  ]
+}
+```
+
+`kind` is one of `workflow`, `pipeline`, `list`. Never `team_agent`.
+
+### Team agents
+
+The Persona repository owns a team agent's **depth-1 gitlink** after workspace publish;
+the team-agent repository owns its definition (`assets/team-agent.json`,
+`assets/task-orchestration.json`) and is edited through the **team-agents** skill in that
+submodule.
+
+A team-agent definition still carries environment-local ids (`appId`, `endpointId`, and
+`data.config.actionId` on native connector nodes). Those ids stay in Gabriel bindings.
+They must never be copied into `workspace.json`. Missing Git binding is an unresolved
+workspace row and **blocks publish**. `schema-form:*` pipeline endpoints are built-ins,
+not git dependencies.
 
 ## Minimal payload example
 `/assets/chat-config.json` is a single JSON object. A typical file looks like:
 
 ```json
 {
-  "schemaVersion": 1,
-  "pageId": "<page-id>",
+  "schemaVersion": 2,
+  "resourceKey": "persona.example",
   "publishedConfig": {
     "name": "...",
     "firstMessage": "...",
@@ -100,8 +364,8 @@ Optional keys the backend may add or preserve when syncing:
 Use this section when editing the file by hand, generating patches, or reviewing diffs. **Ground truth in code:** TypeScript type `ChatConfigPayload` in `server/src/services/digital-twin-page-git/types.ts`; `publishedConfig` follows the page’s stored publish payload (same conceptual shape as `DigitalTwinConfig` in `app/routes/teams/$teamSlug/team-workspaces/$unitSlug/components/configureDigitalTwin.types.ts`).
 
 ### Validation rules (backend)
-- **`schemaVersion`** must be `1` for current writers/readers.
-- **`pageId`** must exactly match the Mongo page id bound to this git repo; otherwise git reads may be rejected as invalid.
+- **`schemaVersion`** must be `2` for new portable writers/readers.
+- **`resourceKey`** must be the stable model identity. A local page id is resolved during import and never belongs in Git.
 - **`publishedConfig`** is stored as a JSON object; unknown nested keys are generally preserved on round-trip unless the product strips them on save.
 - **`pageProfile`** on **pull** is filtered to an allowlist and typed (see `pageProfile`); unknown keys are **ignored** for safety.
 
@@ -109,8 +373,8 @@ Use this section when editing the file by hand, generating patches, or reviewing
 
 | Key | Required | Purpose |
 |-----|----------|---------|
-| `schemaVersion` | yes | Protocol version; use `1`. |
-| `pageId` | yes | Id of the digital twin page this file belongs to. |
+| `schemaVersion` | yes | Portable protocol version; use `2`. |
+| `resourceKey` | yes | Stable model-owned persona identity. |
 | `publishedConfig` | yes | **Published assistant** runtime: prompts, model, voice, connectors, output integration, etc. (see dedicated section). |
 | `pageProfile` | optional on old files; written on new syncs | **Page document display** fields (title, description, avatar, banners, tags) mirrored for git editing. |
 | `endpointSummaries` | optional | Non-authoritative list of `{ "id": string, "name": string, "isPrimary"?: boolean }` for UI/diff context. Live workflow endpoints are **not** defined here. |
@@ -154,7 +418,7 @@ Do not add or edit `chatEmbedConfig` in `assets/chat-config.json`. It is ignored
 1. Start from the page’s `publishedConfig` document (deep-cloned).
 2. If draft `vapiAssistantConfig.outputIntegration.outputTabViewerDefaultsByUserId` exists, copy it onto `publishedConfig.outputTabViewerDefaultsByUserId`.
 3. If draft has `webSearchEnabled`, `xSearchEnabled`, or `xSearchAllowedHandles`, copy those keys onto `publishedConfig` so voice/search flags round-trip in git.
-4. If draft has `composioEnabledToolkitSlugs`, `formUi`, `chatImageUpload`, `agentTopology`, or `onboardingConfig`, copy those keys onto `publishedConfig` so Composio toolkit allowlists, chat UI, onboarding, and agent topology round-trip in git.
+4. If draft has `composioEnabledToolkitSlugs`, `formUi`, `chatImageUpload`, `qualityControlConfig`, or `agentTopology`, copy those keys onto `publishedConfig` so Composio toolkit allowlists, chat UI, the Quality opt-in, and agent topology round-trip in git.
 5. `computerConfig` and `emailConfig` are stored directly on the page and always round-trip in `publishedConfig` when present.
 
 When a coding agent **edits git**, treat `publishedConfig` as the same shape the product uses after publish. The authoritative TypeScript interface is **`DigitalTwinConfig`** (`configureDigitalTwin.types.ts`). Below: **every field name** on that interface with a one-line meaning (optional fields marked by “optional” in prose).
@@ -182,8 +446,8 @@ When a coding agent **edits git**, treat `publishedConfig` as the same shape the
 #### Task execution blueprint (orchestrated skills)
 | Field | Purpose |
 |-------|---------|
-| `taskExecutionBlueprint` | Blueprint for multi-skill / task execution (source, child skills, output format, etc.). |
-| `taskExecutionSourcePageId` | Page id source for blueprint inheritance. |
+| `taskExecutionBlueprint` | **Deprecated for Canvas/Operator commands.** Historical page-level master-skill blueprint; do not add it to support new workflows. Existing unrelated legacy records may still round-trip until migrated. |
+| `taskExecutionSourcePageId` | **Deprecated for Canvas/Operator commands.** Historical page blueprint inheritance reference; do not author for new workflows. |
 
 #### Voice agent stack (LiveKit / telephony / xAI / Anam)
 | Field | Purpose |
@@ -192,6 +456,11 @@ When a coding agent **edits git**, treat `publishedConfig` as the same shape the
 | `voiceOnlyAgentEnabled` | Audio-only voice mode. |
 | `digitalAvatarAgentEnabled` | Avatar video mode when supported. |
 | `phoneAgentEnabled` | Telephony integration enabled. |
+| `callButtonConfig` | Visitor-facing label and icon for the Talk option in the Calls launcher. |
+| `phoneCallButtonConfig` | Visitor-facing label and icon for the Phone option in the Calls launcher. |
+| `checkInScheduleConfig.appearance` | Label and icon for Checkin Mentor. |
+| `coachConfig.appearance` | Label and icon for Coach. |
+| `translateConfig.appearance` | Label and icon for Translate. |
 | `twilioCredentialId` | Reference id to user’s saved Twilio credential (not the secret itself). |
 | `livekitBackend` | `"gateway"` or `"xai-realtime"` backend selection. |
 | `livekitKeyId` | Saved LiveKit key reference. |
@@ -231,39 +500,11 @@ When a coding agent **edits git**, treat `publishedConfig` as the same shape the
 | Field | Purpose |
 |-------|---------|
 | `formUi` | Optional form/cart UI configuration used by the page chat surface; merged from draft so git has the active UI behavior. |
-| `onboardingConfig` | Optional first-run onboarding overlay/sheet definition used by web and mobile chat; merged from draft so git carries the shared onboarding flow. |
 | `chatImageUpload` | Optional image-upload and image-resolver configuration for chat; merged from draft into git when present. |
-| `agentTopology` | Runtime agent topology for multi-supervisor, built-in subagents, and custom subagents; merged from draft into git when present. |
+| `qualityControlConfig` | Optional `{ "enabled": boolean, "subscriberSimulationEnabled"?: boolean }`. Both default false. Subscriber simulation is effective only when both are explicitly true; disabling Quality must persist the nested flag as false. The full object is merged from draft into git and fingerprints the release candidate. |
+| `agentTopology` | Runtime agent topology for multi-supervisor, built-in subagents, custom subagents, and **slash command registration** (`slashCommands`); merged from draft into git when present. Registration only — slash-command **debug graphs** are not stored in this file (see workflow-builder / `assets/slash-connections.json` on the bound workflow repo). |
 | `computerConfig` | Dedicated computer / sandbox configuration. See **Dedicated Computer** section below. |
 | `emailConfig` | Dedicated inbox configuration. See **Dedicated Inbox** section below. |
-
-##### `onboardingConfig` shape
-
-Use `publishedConfig.onboardingConfig` when a digital twin needs a guided first-run intake before or alongside normal chat.
-
-| Field | Purpose |
-|-------|---------|
-| `enabled` | Master switch for the onboarding flow. |
-| `title` / `description` | Header copy shown in the onboarding overlay or sheet. |
-| `submitButtonLabel` | Final-step submit CTA label. |
-| `successMessage` | Optional success toast/message after completion. |
-| `showLaunchIcon` | When true, the runtime may show a manual relaunch affordance. |
-| `rerunOnResubmit` | When true, reopening and submitting onboarding again reruns the configured pipeline. |
-| `pipelineId` | Pipeline to launch after submit. |
-| `transitionId` | Optional initial/manual transition to target when the pipeline run starts. |
-| `steps` | Ordered onboarding questions. |
-
-Each `steps[]` item supports:
-- `id` and `key` for stable identity.
-- `title`, optional `subtitle`, optional `placeholder`, optional `helpText`.
-- `type` in `text`, `textarea`, `email`, `url`, `number`, `single_select`, `multi_select`, `boolean`, or `location`.
-- `required` to block step progression until answered.
-- `options[]` for select-based questions as `{ value, label, description? }`.
-- `pipelineInputKey` to map the answer onto a specific pipeline input name instead of the step key.
-
-Important persistence boundary:
-- `chat-config.json` stores only the shared onboarding definition under `publishedConfig.onboardingConfig`.
-- Per-user answers, current step, and completion state are not stored in git. They live in server-side onboarding-status persistence keyed by `pageId` and `userId` so web and mobile can share progress safely.
 
 #### Composio / Arcade MCP
 | Field | Purpose |
@@ -292,13 +533,13 @@ Important persistence boundary:
 When a user edits configure/publish settings or page display fields in the UI, changes are saved to the database and then synced to this file automatically (500 ms debounce where implemented). **Pull from git** overwrites the database for `publishedConfig` and allowlisted **`pageProfile`** fields to match the file. Chat embed appearance changes sync through `assets/embed-config.json`.
 
 ## Ways to apply changes
-1. **In-app editors** — UI saves to DB; debounced or explicit **Sync to Git** (e.g. from the digital twin Git binding modal) pushes current DB state, including `pageProfile`, to the default branch. That full sync also rewrites the skill tree from the platform template (including this `SKILL.md`) and, for **page-primary** repositories only, deletes legacy `assets/team-agent.json`, `assets/task-orchestration.json`, and `skills/master/SKILL.md` if they are still present from older layouts. Per-endpoint bound repos keep those workflow files.
+1. **In-app editors** — UI saves to DB; debounced or explicit **Sync to Git** (e.g. from the AI Persona Git binding modal) pushes current DB state, including `pageProfile`, to the default branch. That full sync also rewrites the skill tree from the platform template (including this `SKILL.md`) and, for **page-primary** repositories only, deletes legacy `assets/team-agent.json`, `assets/task-orchestration.json`, and `skills/master/SKILL.md` if they are still present from older layouts. Per-endpoint bound repos keep those workflow files.
 2. **Edit in repo** — Commit `assets/chat-config.json` on the bound branch, then use the product’s **Pull** action to hydrate the page document from git.
 3. **Automation / CI** — Pipeline or agent updates the same JSON shape; pull or webhook-driven sync must respect `pageId` and branch binding rules enforced by the backend.
 
 ## Dedicated Computer (`computerConfig`)
 
-A digital twin page can expose a **dedicated computer** (sandbox runtime) to chat and skill-run commands. The author configures this in the **Computer** tab of the Connectors column; the result is stored as `computerConfig` on the page and round-trips in `publishedConfig`.
+An AI Persona can expose a **dedicated computer** (sandbox runtime) to chat and skill-run commands. The author configures this in the **Computer** tab of the Connectors column; the result is stored as `computerConfig` on the page and round-trips in `publishedConfig`.
 
 ### `computerConfig` shape (`DigitalTwinComputerConfig`)
 
@@ -379,7 +620,7 @@ Additional fields on each `DigitalTwinSupervisorAgent` entry:
 
 ## Dedicated Inbox (`emailConfig`)
 
-A digital twin page can expose a **dedicated email inbox** to chat agents. The author configures this in the **Email** tab of the Connectors column; the result is stored as `emailConfig` on the page and round-trips in `publishedConfig`.
+An AI Persona can expose a **dedicated email inbox** to chat agents. The author configures this in the **Email** tab of the Connectors column; the result is stored as `emailConfig` on the page and round-trips in `publishedConfig`.
 
 ### `emailConfig` shape (`DigitalTwinEmailConfig`)
 
@@ -406,7 +647,7 @@ A digital twin page can expose a **dedicated email inbox** to chat agents. The a
 
 ## Gemini Antigravity Managed Agents
 
-Digital twin pages that have a **Gemini managed agents** dedicated computer bound can register their `agentTopology` entries (supervisor agents and custom subagents) as individual Gemini managed agents via the `registerGeminiPageAgents` service function. Each registered agent is backed by the `antigravity-preview-05-2026` runtime, receives a stable ID derived from the page ID and agent ID, and is provisioned with:
+AI Personas that have a **Gemini managed agents** dedicated computer bound can register their `agentTopology` entries (supervisor agents and custom subagents) as individual Gemini managed agents via the `registerGeminiPageAgents` service function. Each registered agent is backed by the `antigravity-preview-05-2026` runtime, receives a stable ID derived from the page ID and agent ID, and is provisioned with:
 
 - A **system instruction** built from the agent's `label`, `description`, `whenToUse`, `instructions`, and `tools`.
 - An inline `.agents/AGENTS.md` that describes the agent role and instructs it to write output files to `/workspace/output/`.
@@ -483,16 +724,16 @@ Output files written to `/workspace/output/` inside the sandbox are extracted fr
 ---
 
 ## Twilio Telephony
-- Digital twin pages can be used with outbound Twilio phone flows, including direct agent phone calls and run callbacks.
+- AI Personas can be used with outbound Twilio phone flows, including direct agent phone calls and run callbacks.
 - Twilio phone number selection is page-aware: if the page has a saved `twilioCredentialId` in `publishedConfig` or `vapiAssistantConfig`, that credential is used first; otherwise the backend falls back to the global Twilio environment configuration when allowed.
 - Callback telephony is a special case and must not depend on the page's stored voice runtime settings.
-- For `run_callback` calls, the voice runtime now uses the system telephony xAI configuration instead of the digital twin page's stored `voiceProvider`, `xaiKeyId`, `xaiVoice`, or other voice-runtime fields.
+- For `run_callback` calls, the voice runtime now uses the system telephony xAI configuration instead of the AI Persona's stored `voiceProvider`, `xaiKeyId`, `xaiVoice`, or other voice-runtime fields.
 - For callbacks, the page/agent ID is still important for tools, knowledge-base context, and conversational context, but not for selecting the voice provider.
 - Callback telephony still requires the caller/user to have a usable default xAI key available in their profile.
 - Twilio telephony requires a public HTTPS backend URL so Twilio can reach the outbound TwiML/status endpoints and the media-stream websocket endpoint.
 
 ## Notes
-- `pageId` must match the page ID bound to this repository.
+- `pageId` must never be written into portable Git definitions. Schema v2 uses `resourceKey`.
 - Passwords and public-access flags are not stored in git; they are managed via the database only (`visibility`, `sharedWith`, `pageSlug`, etc. remain DB-only).
-- Default-branch updates sync back into the digital twin page configuration automatically when the product runs a sync to git.
+- Default-branch updates sync back into the AI Persona configuration automatically when the product runs a sync to git.
 - Older repos may omit `pageProfile` until the next successful sync or pull; the backend treats missing `pageProfile` as valid for reads and fills it on the next write.
