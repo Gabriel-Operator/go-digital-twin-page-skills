@@ -332,7 +332,9 @@ function parseRegistry({ repoRoot }) {
   if (!kinds.has('workflow') || !kinds.has('pipeline') || !kinds.has('list')) {
     throw new Error('references/registry.json must contain at least one workflow, exactly one pipeline, and at least one list.');
   }
-  registry.repos = registry.repos.filter((entry) => entry.kind !== 'team_agent');
+  if (registry.repos.some((entry) => entry.kind === 'team_agent')) {
+    throw new Error('team_agent is not a portable registry kind. Preserve its declaration in workspace.json before publishing.');
+  }
   if (registry.repos.length !== workflowCount + listCount + 1) {
     throw new Error(
       `references/registry.json must contain exactly one Pipeline, every List, and one Workflow per distinct workflowRef — expected ${workflowCount + listCount + 1}, found ${registry.repos.length}.`,
@@ -960,7 +962,7 @@ function childWorktreeIssues({ repoRoot, node }) {
   return issues;
 }
 
-function validateLocal({ repoRoot, manifest }) {
+function validateLocal({ repoRoot, manifest, registry }) {
   const issues = [];
   for (const node of manifest.nodes) {
     if (node.unresolved) {
@@ -970,7 +972,7 @@ function validateLocal({ repoRoot, manifest }) {
 
   // Full Persona -> Workflow -> Pipeline -> List relationship and fingerprints, not just
   // each file's header — otherwise a local publish passes where server import rejects.
-  issues.push(...validatePortableBundle({ repoRoot }));
+  issues.push(...validatePortableBundle({ repoRoot, registry }));
   if(fs.existsSync(path.join(repoRoot,'assets/chat-app.json'))) {
     const result=spawnSync(process.execPath,[path.join(__dirname,'validate-chat-app.js'),'assets/chat-app.json','assets/chat-config.json'],{cwd:repoRoot,encoding:'utf8'});
     if(result.status!==0)issues.push(result.stderr || result.error?.message || 'Chat App validation failed.');
@@ -1296,7 +1298,10 @@ function main() {
     }
   }
 
-  const issues = [...staleIssues, ...validateLocal({ repoRoot, manifest })];
+  // Validate the exact proposed lock, not yesterday's fingerprints against today's
+  // committed child files. No repository state changes before all gates pass.
+  const pinnedRegistry = command === 'publish' ? pinRegistry({ repoRoot, registry }) : undefined;
+  const issues = [...staleIssues, ...validateLocal({ repoRoot, manifest, registry: pinnedRegistry })];
 
   if (command === 'validate') {
     if (issues.length) {
@@ -1314,7 +1319,6 @@ function main() {
 
   // Everything below is planned first, then written. Any failure restores the snapshot so
   // HEAD, the index, and the working tree are exactly as they were.
-  const pinnedRegistry = pinRegistry({ repoRoot, registry });
   const readme = buildReadme({ registry: pinnedRegistry, manifest });
   const snapshot = snapshotGenerated({ repoRoot });
 

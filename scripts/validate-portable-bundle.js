@@ -31,6 +31,12 @@ const FORBIDDEN_DEFINITION_FIELDS = [
   'commandId',
   'recordId',
   'runId',
+  'activeDataListId',
+  'allowedSourceListIds',
+  'checkoutInputListId',
+  'pipelineListBindings',
+  'pipelineTransitionListBindings',
+  'outputTabViewerDefaultsByUserId',
 ];
 
 function stableJson({ value }) {
@@ -85,6 +91,9 @@ function auditLocalIds({ value, kind, issues, pathLabel = '$' }) {
     if (FORBIDDEN_DEFINITION_FIELDS.includes(key) && !appPageRef) {
       issues.push(`${kind}: ${pathLabel}.${key} is environment-local and cannot be in a portable definition.`);
     }
+    if (key === 'id' && /(?:^|\.)outputIntegration\.dataLists\[\d+\]$/.test(pathLabel)) {
+      issues.push(`${kind}: ${pathLabel}.${key} requires a verified portable list reference.`);
+    }
     auditLocalIds({ value: child, kind, issues, pathLabel: `${pathLabel}.${key}` });
   }
 }
@@ -122,10 +131,12 @@ function checkRef({ owner, refs, refKey, expectedKind, expectedKeys, issues }) {
 /**
  * @returns {string[]} issues; empty means the bundle is portable.
  */
-function validatePortableBundle({ repoRoot }) {
+function validatePortableBundle({ repoRoot, registry: candidateRegistry }) {
   const issues = [];
 
-  const registry = readJson({ filePath: path.join(repoRoot, 'references', 'registry.json') });
+  // Publishers may validate a complete proposed lock before writing it. Standalone
+  // validation always reads the committed lock and still detects fingerprint drift.
+  const registry = candidateRegistry || readJson({ filePath: path.join(repoRoot, 'references', 'registry.json') });
   if (!registry) return ['references/registry.json is missing or not valid JSON.'];
   if (registry.schemaVersion !== 2 || !Array.isArray(registry.repos)) {
     return ['references/registry.json must be schema v2 with a repos array.'];
@@ -135,7 +146,7 @@ function validatePortableBundle({ repoRoot }) {
   if (persona.schemaVersion !== 2 || !persona.resourceKey) {
     issues.push('assets/chat-config.json must be schema v2 with a resourceKey.');
   }
-  auditLocalIds({ value: persona.publishedConfig || {}, kind: 'persona', issues });
+  auditLocalIds({ value: persona, kind: 'persona', issues });
 
   // One workflow per distinct workflowRef, one Pipeline, and one or more domain Lists.
   const portableRepos = registry.repos.filter((entry) => (
