@@ -26,7 +26,7 @@ Author new and cross-environment persona assets with stable model identity:
 ```
 
 - Never write `pageId`, `userId`, `commandId`, `automationId`, `actionId`, or any other database identifier into a portable Git definition.
-- Register the portable bundle in `references/registry.json` schema v2. It contains **exactly one Pipeline, exactly one List, and one Workflow for each distinct `workflowRef`**. Commands may share a Workflow entry. Every `workflowRef` must resolve, every Workflow row must be referenced, and at least one Workflow must reference the shared Pipeline; other Workflows may be Pipeline-independent. Every entry requires `kind`, `resourceKey`, repository URL, declared branch, asset path, an immutable `revision`, and the SHA-256 `definitionFingerprint` of the referenced JSON definition. Do not add `team_agent`, `primary`, or `dependsOn` here — extra authoring repos belong in generated `references/workspace.json`.
+- Register the portable bundle in `references/registry.json` schema v2. It contains **exactly one Pipeline, one or more domain Lists, and one Workflow for each distinct `workflowRef`**. Commands may share a Workflow entry. Every `workflowRef` must resolve, every Workflow row must be referenced, every List must reference the shared Pipeline, and at least one Workflow must reference that Pipeline; other Workflows may be Pipeline-independent. Every entry requires `kind`, `resourceKey`, repository URL, declared branch, asset path, an immutable `revision`, and the SHA-256 `definitionFingerprint` of the referenced JSON definition. Do not add `team_agent`, `primary`, or `dependsOn` here — extra authoring repos belong in generated `references/workspace.json`.
 - `revision` and `definitionFingerprint` are owned by **workspace publish**, which recomputes both and writes them with the matching gitlinks in one validated root commit. Run `node scripts/publish-workspace.js publish` (or Gabriel **Publish workspace**); do not hand-edit them. Creating a child repository in Gabriel only marks the workspace dirty — nothing else advances the persona lock, so a pin stays on its last published commit until you publish. Never point a fingerprint at a moving branch alone.
 - The two publishers pin from different sources, deliberately. `scripts/publish-workspace.js` pins the commit **checked out** in each submodule, because that is what you built and tested in this clone. Gabriel's server publish has no working tree and pins each child's **branch head**. After you commit and push a child they agree; they differ only when a submodule is intentionally held on an older commit.
 - A submodule sitting **behind its declared origin branch** is a normal pin and does not block publish. Publish fetches `refs/heads/<branch>` and requires the checked-out SHA to be its ancestor. A missing branch, wrong origin, commit from another branch, or local-only commit blocks publish.
@@ -37,7 +37,7 @@ Author new and cross-environment persona assets with stable model identity:
 
 ## Persona quality contract
 
-`assets/persona-evals.json` schema version 1 is the Git-backed specification, traceability map, and functional scenario contract for this exact Persona workspace. It is independent from structural JSON validation:
+`assets/persona-evals.json` supports legacy schema v1 and explicitly upgraded schema v2. Read [v2 authoring](references/persona-quality-v2.md) for approved skill benchmarks, persona journeys, evidence and bounded improvement. It is the Git-backed specification, traceability map, and functional scenario contract for this exact Persona workspace. It is independent from structural JSON validation:
 
 - **Structure** proves that schemas, refs, child pins, stages, guards, mappings, and orchestration are connected correctly.
 - **Specification coverage** proves that confirmed business requirements map to real implementation elements and reciprocal eval cases.
@@ -82,14 +82,110 @@ Run `node scripts/validate-persona-evals.js` for repository-level contract check
 
 An update uses optimistic `expectedHeadSha`, modifies only `assets/persona-evals.json`, and invalidates the previous candidate. Workspace publish creates a candidate containing the root SHA and every relevant fingerprint. Live publish materializes that evaluated Git candidate and is centrally gated on current-head equality, structural pass, coverage pass, required mock-suite pass, and Git/database parity. Any root, child pin, suite, requirement, model, runtime, registry, or workspace change makes earlier results stale. Only audited platform-admin break glass may bypass an enforced gate.
 
-Quality control is strictly opt-in through `publishedConfig.qualityControlConfig.enabled === true`. Missing or false means the seventh **Quality** tab, the owner-only live/mobile Quality views, and release gating remain disabled; this preserves legacy Persona behavior. Enable it from the create/edit Persona **Features** tab. Subscriber testing is a separate nested opt-in: `subscriberSimulationEnabled` is effective only when the parent is enabled, defaults to false, and must be written back as false when Quality is disabled. When both are enabled, every subscriber-facing command needs a required mock subscriber case and **Subscriber experience** becomes a release dimension. Owners also receive `Viewing as: Author | Subscriber simulation` in the Persona header. The preview uses a one-time, owner/page/candidate-bound session and never creates an impersonation login. Plain-text free exploration uses the exact candidate prompt/model in a tool-free subscriber lane; configured Operator and Canvas commands use fresh isolated list/pipeline copies, declared fixtures, and the production executor. Free exploration is mock-only and never satisfies readiness. Gateway tools may run `runAs: subscriber` cases but never accept actor ids or create browser previews. Once Quality is enabled, use it for Requirements, Coverage, Scenarios, and Runs. The same owner-only tab appears in the live Persona experience and links each case to Canvas. Visitors never see eval controls or data. Mobile owners can inspect actor-labelled readiness/history, run or cancel suites, and open Canvas; v1 mobile does not author the specification or interactively impersonate. Inventory-generated requirement prompts are drafts until the owner confirms them.
+For legacy v1 personas, Quality control is opt-in through `publishedConfig.qualityControlConfig.enabled === true`. Missing or false means the seventh **Quality** tab, the owner-only live/mobile Quality views, and release gating remain disabled; this preserves legacy Persona behavior. Enable it from the create/edit Persona **Features** tab. Subscriber testing is a separate nested opt-in: `subscriberSimulationEnabled` is effective only when the parent is enabled, defaults to false, and must be written back as false when Quality is disabled. When both are enabled, every subscriber-facing command needs a required mock subscriber case and **Subscriber experience** becomes a release dimension. Owners also receive `Viewing as: Author | Subscriber simulation` in the Persona header. The preview uses a one-time, owner/page/candidate-bound session and never creates an impersonation login. Plain-text free exploration uses the exact candidate prompt/model in a tool-free subscriber lane; configured Operator and Canvas commands use fresh isolated list/pipeline copies, declared fixtures, and the production executor. Free exploration is mock-only and never satisfies readiness. Gateway tools may run `runAs: subscriber` cases but never accept actor ids or create browser previews. The Quality overview separates the persona benchmark from its skills. Each detail screen contains Tests, Definition of Ready, Definition of Done and History. V2 release enforcement survives disabling the display toggle. The same owner-only tab appears in the live Persona experience and links each case to Canvas. Visitors never see eval controls or data. Mobile owners can inspect actor-labelled readiness/history, run or cancel suites, and open Canvas; v1 mobile does not author the specification or interactively impersonate. Inventory-generated requirement prompts are drafts until the owner confirms them.
 
 ## Goal
 Maintain one AI Persona configuration per repository. The `assets/chat-config.json` file is the source of truth for the page's **display profile** (`pageProfile`: title, description, avatar, banners, tags, taxonomy) and **published AI runtime** (`publishedConfig`: assistant name, prompts, voice, connectors, tools, etc.) when a git repository is connected.
 
 Embed appearance is no longer owned by this file. For hero copy, themes, backgrounds, public about panels, conversion blocks, and widget appearance, use the separate embed config skill and edit `assets/embed-config.json`.
 
-This skill scope is **chat-config.json**, the portable `references/registry.json` triple, and the generated authoring graph in `references/workspace.json`. Workflow endpoint bindings and task orchestration for team agents are covered by the **team-agents** skill, which ships inside each linked team-agent repository under `references/team-agents/`. This repository owns the *depth-1 gitlink*; the team-agent repository owns its definition. Team agents are **not** portable registry rows. See **Linked repositories** below.
+When `publishedConfig.landingPage` is present, its schema-version-2 `localization` object is authoritative for public translation and country-specific full-page variants. It is required on newly created landing pages and optional only when reading legacy pages. `localization.translation` contains `enabled`, `sourceLanguage`, `defaultLanguage`, optional `autoDetectCountryLanguage` (default true), and platform-generated `generatedTranslations`; `localization.regionalPages[]` contains a unique key/label, unique uppercase ISO alpha-2 country assignments, a regional default language, and a complete landing page under `page` with no nested `localization`. Market-managed regions additionally own `sourceLanguage` and a `marketContext` containing locale, canonical source asset path, context revision, protected glossary terms, and evidence. Automatic country language selection uses the server-resolved request-IP country and CLDR likely-language data, while a matched regional default remains authoritative. Generated translations are a source-revisioned manifest: base copy is stored as `assets/landing-page.<language>.json`, while new market translations live at `assets/markets/<country>/landing-page.<language>.json`; runtime reads only the selected asset. New entries advertise `assetSchemaVersion: 2`; each v2 asset indexes translated paths by original source hash so unchanged copy can be safely rebased after an authored edit. A market asset may be reused only when its context revision still matches. Matching or safely reusable entries are served before visitor quota, and only genuinely changed strings reach the provider. The landing-page-builder repository remains the authoring source and its existing publish workflow mirrors the manifest and language files into this parent repository. Legacy inline cache entries, exact version-1 assets, flat regional paths, and `chatEmbedConfig.translationEnabled/defaultLanguage` remain read-compatible. Never author quota values, visitor identities, IP addresses, or manual visitor region overrides in Git. Do not hand-invent generated translation revisions or paths; use the platform flow or validated repository tooling.
+
+**Split files are the write contract.** `assets/chat-config.json` stores the compact
+manifest projection only. A new `generatedTranslations[]` entry must have `assetPath`
+and must not have `page` or `chatEmbedConfig`; those values live in that one asset file.
+Never consolidate language files during a Persona sync. When a database projection still
+contains inline legacy entries, the Git writer must externalize them atomically with the
+manifest update. Reads may support the legacy shape, but edits and syncs may not produce
+it. Runtime must resolve the manifest and fetch only the requested locale asset.
+
+### Create-time defaults (new personas)
+
+When creating a persona or writing a first `assets/chat-config.json`, always persist the keys below. Do not omit them: product fallbacks treat missing `todosConfig` and missing `checkInScheduleConfig.enabled` as **on**.
+
+**Landing-page localization — always on when a landing page is created.** Every
+new `publishedConfig.landingPage` must contain this baseline; do not expose localization
+as a separate create-time opt-in:
+
+```json
+{
+  "localization": {
+    "translation": {
+      "enabled": true,
+      "sourceLanguage": "en",
+      "defaultLanguage": "en",
+      "autoDetectCountryLanguage": true,
+      "generatedTranslations": []
+    },
+    "regionalPages": []
+  }
+}
+```
+
+After the English page is final, and again after every authored page change, use `landing-page-translations` to incrementally refresh and validate
+the maintained 37-language cache, mirror the compact manifest and every language asset from
+the landing-page child into this parent repository, and commit child first. Keep the settings enabled even if a
+provider is temporarily unavailable; report missing cache coverage rather than removing
+the localization object. `translateConfig` is a different voice/assistant feature and
+must not be enabled as a substitute.
+
+The required filename is `assets/landing-page.<language>.json`; market content uses
+`assets/markets/<country>/landing-page.json` plus one `landing-page.<language>.json` per
+non-canonical language. English stays in the authored base
+page. Preserve stale assets until the generator has recovered their unchanged copy from
+Git history; never delete them and force an avoidable full translation. Before handoff,
+reject any newly written manifest entry containing an inline `page`,
+run the translation skill's migration mode for legacy entries, and run its `--check`.
+For jurisdiction-specific copy or ROI assumptions, read `../landing-page-regions/SKILL.md`; regions
+adapt individual sections before translation, and protected region terms must not be translated away.
+
+**Voice Agents — always on, Gemini Live only.** Enable Talk on every new persona and always set the provider to Gemini. Never default to xAI, LiveKit, Vapi, or Vapi Squad.
+
+```json
+{
+  "voiceAgentEnabled": true,
+  "voiceOnlyAgentEnabled": true,
+  "voiceProvider": "gemini",
+  "geminiLiveModel": "gemini-3.1-flash-live-preview",
+  "geminiLiveVoice": "Aoede"
+}
+```
+
+Also call `gabriel_update_twin_config` with the same keys. Writing them only in this file leaves Configure / owner chat on stale draft Mongo (`voiceAgentEnabled: false`) until a pull.
+
+Do not enable `digitalAvatarAgentEnabled`, `phoneAgentEnabled`, `coachConfig`, `translateConfig`, or `meetingsConfig` unless the user asked.
+
+**Operator slash-command Talk — command-level `voiceAgent`, not only persona Talk.** The Talk / Digital Avatar picker reads `publishedConfig.agentTopology.slashCommands[].voiceAgent`. Persona `voiceAgentEnabled` does not activate an operator. On every operator command you want in Talk, set:
+
+```json
+{
+  "id": "slash-command-1",
+  "trigger": "run",
+  "label": "Run",
+  "execution": { "type": "operator_action" },
+  "voiceAgent": {
+    "enabled": true,
+    "prompt": "Ask what the user wants, gather the required details, read them back, and confirm before starting."
+  }
+}
+```
+
+A non-empty `prompt` is required. `{ "enabled": true }` with an empty prompt is dropped. Do not rely on `execution.canvas.voiceAgent` for `operator_action` commands.
+
+**To-Dos — always off.** The chat **To-Dos button** is only `publishedConfig.todosConfig.enabled`. Write `{ "todosConfig": { "enabled": false } }`. Never set `voiceAgentEnabled` false to hide To-Dos. Never use `todoConfig`. A boolean `"todosConfig": false` is coerced to `{ "enabled": false }`, but prefer the object form.
+
+**Checkin Mentor is not the To-Dos button.** It is the Calls-menu check-in (`checkInScheduleConfig`). Leave it off with `{ "checkInScheduleConfig": { "enabled": false } }`. That does not hide To-Dos and must not change Talk.
+
+```json
+{
+  "todosConfig": { "enabled": false },
+  "checkInScheduleConfig": { "enabled": false }
+}
+```
+
+Only turn To-Dos or Checkin Mentor on later if the user explicitly asks.
+
+This skill scope is **chat-config.json**, the portable `references/registry.json` bundle, and the generated authoring graph in `references/workspace.json`. Workflow endpoint bindings and task orchestration for team agents are covered by the **team-agents** skill, which ships inside each linked team-agent repository under `references/team-agents/`. This repository owns the *depth-1 gitlink*; the team-agent repository owns its definition. Team agents are **not** portable registry rows. See **Linked repositories** below.
 
 **Slash-command debug/docs are out of scope here.** Do not create or edit `assets/slash-connections/` (or any slash-command connection debug graphs) in this repository. Those live in each command's bound **workflow** repository as `assets/slash-connections.json`, owned by the **workflow-builder** skill (`server/skills/workflow-builder/`). Runtime registration of slash commands (`publishedConfig.agentTopology.slashCommands`: trigger, label, enabled, action linkage) still round-trips in `chat-config.json` when present — that registration is not the debug graph.
 
@@ -113,21 +209,47 @@ automatic command is allowed per persona. The command must use the standard
 submission tools, acquisition recipes, or Canvas task definitions here.
 
 Existing-case identity is also outside Persona configuration. Do not add a locator
-column, URL-normalization rule, or `existingCasePolicy` object to
-`assets/chat-config.json` or the slash-command details UI. The command's workflow
-Canvas references a stable `existingCasePolicyId`; the selected Pipeline owns and
-configures that policy under **Pipeline → Manage → Config → Existing-case detection**.
-Changing `form_url` to another resource locator therefore belongs to the Pipeline
-and its bound List schema, not to `PersonaOperatorSlashCommandsPanel`.
+column, URL-normalization rule, `existingCasePolicy` object, or questionnaire
+prefill toggle to `assets/chat-config.json` or the slash-command details UI. The
+command's workflow Canvas references a stable `existingCasePolicyId`; the selected
+Pipeline owns and configures that policy under **Pipeline → Manage → Config →
+Existing-case detection**. Changing `form_url` to another resource locator
+therefore belongs to the Pipeline and its bound List schema, not to
+`PersonaOperatorSlashCommandsPanel`.
 
-Persona Chat apps configured in the Identity/Reach editor may be reused by a
-workflow-authored Canvas task for `responseCollection.mode: "channels_only"`.
-That runtime use is runner-specific: it requires the authenticated runner's
-linked external identity and sends a single-use questionnaire URL scoped to one
-Canvas decision. It must not inject the questionnaire or its answers into the
-Persona's general chat conversation. The channel list belongs to the workflow
-task, while `chat-config.json` continues to own only the normal Chat app
-configuration and slash-command registration.
+### Canvas questionnaires (`channels_only`)
+
+Form-fill slash commands (`/fill`, `/capture-and-fill`, and custom Canvas Collect
+tasks) pause on a `channels_only` questionnaire. Runtime — not this file —
+presents **Answer here**, **Talk**, and **Chat**:
+
+- **Answer here** is the trusted inline form.
+- **Talk** is `in_app_voice` when the workflow lists it in `allowedChannels`.
+- **Chat** is `in_app_chat`: Canvas starts a new session titled **Questionnaire**,
+  closes the Canvas sheet, and uses a questionnaire-only agent (trusted questions
+  plus preview/answer tools, no persona tools). After answers, Canvas reopens for
+  Confirm and continue. This is not general Persona chat and must not be
+  registered as a slash command, Chat app, or `allowedChannels` value.
+
+Persona Chat apps configured in the Identity/Reach editor may still be reused as
+**runner channels** for the same Collect task. That use is runner-specific: it
+requires the authenticated runner's linked external identity and sends a
+single-use questionnaire URL scoped to one Canvas decision. It must not inject
+the questionnaire or its answers into the Persona's general chat conversation.
+The runner channel list belongs to the workflow task (`allowedChannels`:
+`in_app_voice`, `phone`, `email`, `persona_channels`). `chat-config.json`
+continues to own only the normal Chat app configuration and slash-command
+registration.
+
+Questionnaire draft prefill is also runtime. When Collect starts, Canvas
+suggests answers from, in order: a prior List row for this form (Pipeline
+`existingCasePolicies`, including a silent lookup), the signed-in user's
+profile, then conversational memory when `publishedConfig.memoryConfig.provider`
+is not `none`. Low-confidence memory never writes into the form. Leave
+`memoryConfig` as `inherit` or an explicit Honcho/Mem0 provider for form-fill
+personas unless the user wants memory off. Do not author prefill mappings,
+profile field lists, or Honcho queries in this repository — see
+**workflow-builder** Rule 4 and **pipeline-builder** Collect.
 
 ## Using this skill in coding agents
 
@@ -177,6 +299,9 @@ else could resolve them.
 
 **Validation is split by trust.** New scaffolds declare their validator scripts in the
 root `gabriel.workspace.json`; only the fixed `node` and `tsx` runners are accepted.
+When one repository intentionally contains more than one portable kind, the manifest may
+declare a `resources` array with one `{ kind, scaffold, validators }` group per kind; the
+publisher selects and requires the group matching each workspace node.
 Locally, each child's declared validators run
 (`validate-pipeline.js`, `validate-list.js` plus `validate-records.js` when the list has
 rows, `validate-workflow.ts`, and both `validate-team-agent.ts` and
@@ -257,8 +382,8 @@ pack. Links are written by the product when the author creates the child reposit
 never add or edit `.gitmodules` by hand.
 
 ```text
-references/registry.json               ← portable: distinct workflows + one pipeline + one list
-references/workspace.json              ← generated depth-1 authoring graph (ignored by import)
+references/registry.json               ← portable: distinct workflows + one pipeline + domain lists
+references/workspace.json              ← generated depth-1 authoring graph (team agents + extras)
 references/README.md                   ← generated from workspace.json
 references/chat-config-contract.json   ← machine-readable contract for chat-config.json
 references/pipelines/<resource-key>/   ← submodule: pipeline-builder repo
@@ -284,7 +409,7 @@ git remote slug when the child is workspace-only. The readable name lives in
 ### Portable registry vs authoring graph
 
 `registry.json` is the **strict portable bundle**. Import materializes its distinct
-referenced Workflows plus exactly one Pipeline and one List. Do not add team agents or
+referenced Workflows plus exactly one Pipeline and every registered domain List. Do not add team agents or
 same-environment extra workflows to it.
 
 `workspace.json` is **generated**. Authors and agents do not hand-edit it. Publish
@@ -418,7 +543,7 @@ Do not add or edit `chatEmbedConfig` in `assets/chat-config.json`. It is ignored
 1. Start from the page’s `publishedConfig` document (deep-cloned).
 2. If draft `vapiAssistantConfig.outputIntegration.outputTabViewerDefaultsByUserId` exists, copy it onto `publishedConfig.outputTabViewerDefaultsByUserId`.
 3. If draft has `webSearchEnabled`, `xSearchEnabled`, or `xSearchAllowedHandles`, copy those keys onto `publishedConfig` so voice/search flags round-trip in git.
-4. If draft has `composioEnabledToolkitSlugs`, `formUi`, `chatImageUpload`, `qualityControlConfig`, or `agentTopology`, copy those keys onto `publishedConfig` so Composio toolkit allowlists, chat UI, the Quality opt-in, and agent topology round-trip in git.
+4. If draft has `composioEnabledToolkitSlugs`, `formUi`, `chatImageUpload`, `qualityControlConfig`, `agentTopology`, `chatCommandSettings`, `chatCommandModels`, or `multimodalUnderstanding`, copy those keys onto `publishedConfig` so Composio toolkit allowlists, chat UI, Quality opt-in, agent topology, generation commands, and input-understanding providers round-trip in git.
 5. `computerConfig` and `emailConfig` are stored directly on the page and always round-trip in `publishedConfig` when present.
 
 When a coding agent **edits git**, treat `publishedConfig` as the same shape the product uses after publish. The authoritative TypeScript interface is **`DigitalTwinConfig`** (`configureDigitalTwin.types.ts`). Below: **every field name** on that interface with a one-line meaning (optional fields marked by “optional” in prose).
@@ -452,13 +577,15 @@ When a coding agent **edits git**, treat `publishedConfig` as the same shape the
 #### Voice agent stack (LiveKit / telephony / xAI / Anam)
 | Field | Purpose |
 |-------|---------|
-| `voiceAgentEnabled` | Master switch for voice agent sessions. |
-| `voiceOnlyAgentEnabled` | Audio-only voice mode. |
-| `digitalAvatarAgentEnabled` | Avatar video mode when supported. |
-| `phoneAgentEnabled` | Telephony integration enabled. |
+| `voiceAgentEnabled` | Master switch for voice agent sessions. New personas must set this `true` **and** patch it with `gabriel_update_twin_config` (git-only is not enough for Configure / owner chat). |
+| `voiceOnlyAgentEnabled` | Audio-only Talk mode. New personas must set this `true` with Gemini Live. |
+| `agentTopology.slashCommands[].voiceAgent` | Operator Talk. `{ "enabled": true, "prompt": "..." }` on the **command** (not only canvas). Empty prompt is ignored. |
+| `digitalAvatarAgentEnabled` | Avatar video mode when supported. Leave off on create unless asked. |
+| `phoneAgentEnabled` | Telephony integration enabled. Leave off on create unless asked. |
 | `callButtonConfig` | Visitor-facing label and icon for the Talk option in the Calls launcher. |
 | `phoneCallButtonConfig` | Visitor-facing label and icon for the Phone option in the Calls launcher. |
-| `checkInScheduleConfig.appearance` | Label and icon for Checkin Mentor. |
+| `checkInScheduleConfig` | Checkin Mentor in the Calls menu. Not the To-Dos button and not Gemini Talk. Omitted `enabled` means on. New personas must write `{ "enabled": false }`. Do not create this voice agent by default. |
+| `checkInScheduleConfig.appearance` | Label and icon for Checkin Mentor (only if the user later enables it). |
 | `coachConfig.appearance` | Label and icon for Coach. |
 | `translateConfig.appearance` | Label and icon for Translate. |
 | `twilioCredentialId` | Reference id to user’s saved Twilio credential (not the secret itself). |
@@ -477,7 +604,7 @@ When a coding agent **edits git**, treat `publishedConfig` as the same shape the
 | `anamKeyId` / `anamAvatarId` / `anamPersonaName` / `anamApiUrl` / `anamRenderVideo` / `anamVoiceId` / `anamLlmId` | Anam avatar plugin configuration. |
 | `ttsModel` / `ttsVoice` / `ttsVoiceCustom` / `ttsLanguage` | Text-to-speech stack. |
 | `sttModel` / `sttLanguage` | Speech-to-text stack. |
-| `voiceProvider` | Voice stack provider key. |
+| `voiceProvider` | Voice stack provider. **Always `"gemini"`** when enabling Talk on a new persona. Never default to `xai`, `livekit`, `vapi`, or `vapi-squad`. |
 | `vapiSquadId` / `vapiAssistantId` | Legacy Vapi ids when used. |
 | `voiceLlmModel` | Separate LLM for voice path vs chat. |
 | `backgroundAudio` | Ambient loop: `none`, `office`, `cafe`, `nature`. |
@@ -488,21 +615,26 @@ When a coding agent **edits git**, treat `publishedConfig` as the same shape the
 | `browserProviderId` | Browser automation provider for goals/workflows. |
 | `guardianRequirements` | Guardian policy requirements (browser, sites, credential types). |
 | `geminiProviderId` | Gemini File Search provider id. |
-| `geminiLiveProviderId` / `geminiLiveModel` / `geminiLiveVoice` / `geminiLiveWebSearchEnabled` | Gemini Live realtime voice configuration. |
+| `geminiLiveProviderId` / `geminiLiveModel` / `geminiLiveVoice` / `geminiLiveWebSearchEnabled` | Gemini Live realtime voice configuration. New personas: `geminiLiveModel` `"gemini-3.1-flash-live-preview"`, `geminiLiveVoice` `"Aoede"`. |
 | `xaiProviderId` | xAI File Search provider id. |
 | `mem0ProviderId` | mem0 memory provider id. |
+| `jarvisMode` | Optional `{ "enabled": boolean, "localComputerControl": boolean, "preferredTransport": "runner-choice" \| "realtime" \| "local-hybrid" }`. Both capability switches default off. This is local Gabriel Desktop control and is independent of `computerConfig`. |
+| `memoryConfig` | Optional `{ "provider": "inherit" \| "honcho" \| "mem0" \| "none", "providerId"?: string, "captureMode": "automatic" \| "explicit" }`. `providerId` is a safe saved-provider reference and is valid only for explicit Honcho or Mem0. Canvas `channels_only` questionnaires also read this at Collect time (unless `none`) to suggest answers; they never auto-submit those drafts. |
 | `sandboxProviderId` | E2B sandbox provider id. |
-| `chatCommandSettings` | Which slash-commands / tools are exposed in chat UI. Keys: `image`, `video`, `audio`, `search`, `deepsearch`, `deepresult`, `skillRun`; each value is `boolean`. Default for all keys is `false`. |
+| `chatCommandSettings` | Which **generation** slash-commands / tools are exposed in chat UI. Keys: `image`, `video`, `audio`, `search`, `deepsearch`, `deepresult`, `skillRun`; each value is `boolean`. Default for all keys is `false`. This does **not** control input understanding. |
 | `chatCommandModels` | Per-command model overrides: `Partial<Record<ChatCommandKey, string>>`. Same keys as `chatCommandSettings`; value is a model id string. Set per-tool in the Agents column. Takes precedence over the global `llmModel` for that command. |
 | `chatCommandOptions` | Per-command extra options: `Partial<Record<ChatCommandKey, Record<string, unknown>>>`. Arbitrary key-value config per command (e.g. `video.durationSeconds`, `video.size`). Also set per-tool in the Agents column. |
+| `multimodalUnderstanding` | Independent **input** capabilities. Shape: `{ image, video, audio, file }` each `{ enabled: boolean, provider: "google" \| "openrouter", modelId?: string }`. Defaults when omitted: image enabled, video/audio/file disabled, every capability preselects `google`. For `google`, `modelId` is an optional saved Gemini credential id shared across image, video, audio, and file (same store as Talk / File Search) — omit it to reuse `geminiLiveProviderId`, then `geminiProviderId`, then the system default Gemini API key. For `openrouter`, `modelId` is an opaque custom/gateway model reference. Never store API keys here. `/capture-and-fill` schema extraction uses Image Understanding; producing the filled image remains image generation. |
 
 #### Chat UI, forms, and agents
 | Field | Purpose |
 |-------|---------|
 | `formUi` | Optional form/cart UI configuration used by the page chat surface; merged from draft so git has the active UI behavior. |
 | `chatImageUpload` | Optional image-upload and image-resolver configuration for chat; merged from draft into git when present. |
+| `landingPage` | Optional only when no marketing page exists. Every newly created landing page must include enabled schema-v2 localization, IP-country language detection, and the source-revisioned generated cache produced by `landing-page-translations`. |
+| `todosConfig` | Optional `{ "enabled": boolean }`. Product default when omitted is **on**. New personas must persist `{ "enabled": false }`. Do not enable To-Dos or invoke `todo-builder` on create. |
 | `qualityControlConfig` | Optional `{ "enabled": boolean, "subscriberSimulationEnabled"?: boolean }`. Both default false. Subscriber simulation is effective only when both are explicitly true; disabling Quality must persist the nested flag as false. The full object is merged from draft into git and fingerprints the release candidate. |
-| `agentTopology` | Runtime agent topology for multi-supervisor, built-in subagents, custom subagents, and **slash command registration** (`slashCommands`); merged from draft into git when present. Registration only — slash-command **debug graphs** are not stored in this file (see workflow-builder / `assets/slash-connections.json` on the bound workflow repo). |
+| `agentTopology` | Runtime agent topology for multi-supervisor, built-in subagents, custom subagents, and **slash command registration** (`slashCommands`); merged from draft into git when present. Each operator command that should appear in Talk must include command-level `voiceAgent.enabled` plus a non-empty `prompt`. Registration only — slash-command **debug graphs** are not stored in this file (see workflow-builder / `assets/slash-connections.json` on the bound workflow repo). |
 | `computerConfig` | Dedicated computer / sandbox configuration. See **Dedicated Computer** section below. |
 | `emailConfig` | Dedicated inbox configuration. See **Dedicated Inbox** section below. |
 
@@ -525,7 +657,7 @@ When a coding agent **edits git**, treat `publishedConfig` as the same shape the
 | `outputIntegration` | Full output integration object: connectors, `resultSets`, `dataLists`, `pipelineListBindings`, Airtable/Notion ids, etc. (see `OutputIntegrationConfig` in the same types file). |
 | `outputTabViewerDefaultsByUserId` | Per-user Output tab defaults (`defaultPipelineId`, `defaultListByPipelineId`); **merged from draft** into git `publishedConfig` for visibility in repo. |
 
-**Secrets:** Do not commit raw API keys, Twilio auth tokens, or private LiveKit secrets when avoidable; the product often uses **reference ids** (`*KeyId`, `*CredentialId`) pointing at user-stored credentials.
+**Secrets and device state:** Never commit raw API keys, Twilio auth tokens, private LiveKit secrets, Honcho workspace ids, raw Gabriel user ids, memory identity HMAC material, local voice model paths/download state, device capability state, or Jarvis consent. `memoryConfig.providerId` is only an opaque saved-provider reference. The product uses reference ids (`*KeyId`, `*CredentialId`, `providerId`) pointing at encrypted user-stored credentials.
 
 ---
 
@@ -538,6 +670,10 @@ When a user edits configure/publish settings or page display fields in the UI, c
 3. **Automation / CI** — Pipeline or agent updates the same JSON shape; pull or webhook-driven sync must respect `pageId` and branch binding rules enforced by the backend.
 
 ## Dedicated Computer (`computerConfig`)
+
+`computerConfig` is exclusively the remote/dedicated sandbox binding. Do not use it to represent Jarvis control of the runner's Mac. Local Mac control is declared only through `jarvisMode.localComputerControl`; Gabriel Desktop negotiates native capability and asks for fresh call-scoped consent at runtime. Git never proves that a device is capable or authorized.
+
+Portable Runtime (DGX Spark / RTX Linux appliance) is also device state: model paths, GPU profile, secrets, and `offline|local-first|hybrid` policy must not be written into this author repository. After a published candidate exists, load [`portable-persona-runtime`](https://github.com/Gabriel-Operator/portable-persona-runtime) (`npx skills add Gabriel-Operator/portable-persona-runtime`) or topic `portable-persona-runtime`. Compatibility rules: core execution (chat, knowledge, skills, workflows, lists/pipelines, local sandbox, API, MCP) must remain local-capable; Gemini Live, telephony, meetings, SaaS connectors, and cloud media stay classified as consented online capabilities.
 
 An AI Persona can expose a **dedicated computer** (sandbox runtime) to chat and skill-run commands. The author configures this in the **Computer** tab of the Connectors column; the result is stored as `computerConfig` on the page and round-trips in `publishedConfig`.
 

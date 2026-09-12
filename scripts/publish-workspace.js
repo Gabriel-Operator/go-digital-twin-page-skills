@@ -31,6 +31,7 @@ const KIND_DIRECTORY = {
   pipeline: 'pipelines',
   list: 'lists',
   team_agent: 'team-agents',
+  landing_page: 'landing-pages',
 };
 
 /** Primary asset per kind — the definition the registry pins and the manifest records. */
@@ -39,6 +40,7 @@ const PRIMARY_ASSET = {
   list: 'assets/list.json',
   workflow: 'assets/workflow.json',
   team_agent: 'assets/team-agent.json',
+  landing_page: 'assets/landing-page.json',
 };
 
 const VALIDATOR_MANIFEST = 'gabriel.workspace.json';
@@ -50,6 +52,7 @@ const SCAFFOLD_BY_KIND = {
   pipeline: 'pipeline-builder',
   list: 'list-builder',
   team_agent: 'team-agents',
+  landing_page: 'landing-page-builder',
 };
 
 /**
@@ -75,6 +78,9 @@ const CHILD_VALIDATORS = {
     // submit-order, reserve-slot) ships only assets/team-agent.json, and this
     // validator exits non-zero when handed a path that does not exist.
     { runner: 'tsx', script: 'scripts/validate-task-orchestration.ts', assetPath: 'assets/task-orchestration.json', mode: 'if_asset_present' },
+  ],
+  landing_page: [
+    { runner: 'node', script: 'scripts/validate-landing-page.js', assetPath: 'assets/landing-page.json', mode: 'required' },
   ],
 };
 
@@ -127,6 +133,29 @@ function fingerprint({ value }) {
   return crypto.createHash('sha256').update(stableJson({ value })).digest('hex');
 }
 
+/** Supplemental package pin: never change legacy definitionFingerprint semantics. */
+function committedPreviewPackagePin({ repoRoot, node, reference }) {
+  if (!reference || Object.keys(reference).some(k => !['path', 'mode'].includes(k)) || !/^skills\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(reference.path) || !['legacy', 'shadow', 'skill'].includes(reference.mode)) throw new Error('Invalid workflowSkill reference');
+  const cwd = path.join(repoRoot, node.path);
+  const read = args => {
+    const result = spawnSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 1024 * 1024 });
+    if (result.status !== 0) throw new Error('Unable to read committed workflow package');
+    return result.stdout;
+  };
+  if (!/^[a-f0-9]{40}$/.test(node.revision)) throw new Error('Workflow package needs a commit SHA');
+  const entries = read(['ls-tree', '-r', '-z', '-l', node.revision, '--', `${reference.path}/`]).split('\0').filter(Boolean);
+  if (!entries.length || entries.length > 96) throw new Error('Invalid workflow package size');
+  let total = 0;
+  const files = entries.map(entry => {
+    const [meta, name] = entry.split('\t');
+    const [mode, type, blob, size] = meta.trim().split(/\s+/);
+    if (mode !== '100644' || type !== 'blob' || !name.startsWith(`${reference.path}/`) || Number(size) > 65536 || (total += Number(size)) > 3145728) throw new Error('Unsafe package blob');
+    return [name.slice(reference.path.length + 1), read(['cat-file', 'blob', blob])];
+  }).sort(([a], [b]) => a.localeCompare(b));
+  // Strict schema validation is performed by the maintained child validator below.
+  return { path: reference.path, fingerprint: crypto.createHash('sha256').update(JSON.stringify(files)).digest('hex') };
+}
+
 function git({ args, cwd, allowFail = false }) {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
   if (result.status !== 0 && !allowFail) {
@@ -174,7 +203,8 @@ function normalizeRepoRelativePath({ value, label }) {
 }
 
 function isBuiltin({ value }) {
-  return String(value || '').trim().toLowerCase().startsWith('schema-form:');
+  const endpoint = String(value || '').trim().toLowerCase();
+  return endpoint.startsWith('schema-form:') || endpoint.startsWith('image-fill:') || ['grocery-inventory:review', 'grocery-inventory:dietary', 'grocery-inventory:restock-review'].includes(endpoint);
 }
 
 function toReferenceSlug({ value }) {
@@ -188,6 +218,8 @@ function toReferenceSlug({ value }) {
 
 function cleanRemoteUrl({ repositoryUrl }) {
   const trimmed = String(repositoryUrl || '').trim().replace(/\.git$/i, '');
+  const sshMatch = trimmed.match(/^git@([^:]+):(.+)$/);
+  if (sshMatch) return `https://${sshMatch[1]}/${sshMatch[2]}`.replace(/\/+$/, '');
   try {
     const parsed = new URL(trimmed);
     parsed.username = '';
@@ -295,17 +327,16 @@ function parseRegistry({ repoRoot }) {
   }
   // A persona binds one registry Workflow per distinct workflowRef; commands may share it.
   const workflowCount = registry.repos.filter((entry) => entry.kind === 'workflow').length;
+  const listCount = registry.repos.filter((entry) => entry.kind === 'list').length;
   const kinds = new Set(registry.repos.map((entry) => entry.kind));
   if (!kinds.has('workflow') || !kinds.has('pipeline') || !kinds.has('list')) {
-    throw new Error('references/registry.json must contain at least one workflow, and exactly one pipeline and list.');
+    throw new Error('references/registry.json must contain at least one workflow, exactly one pipeline, and at least one list.');
   }
-  if (registry.repos.length !== workflowCount + 2) {
+  registry.repos = registry.repos.filter((entry) => entry.kind !== 'team_agent');
+  if (registry.repos.length !== workflowCount + listCount + 1) {
     throw new Error(
-      `references/registry.json must contain exactly one Pipeline, one List, and one Workflow per distinct workflowRef — expected ${workflowCount + 2}, found ${registry.repos.length}.`,
+      `references/registry.json must contain exactly one Pipeline, every List, and one Workflow per distinct workflowRef — expected ${workflowCount + listCount + 1}, found ${registry.repos.length}.`,
     );
-  }
-  if (registry.repos.some((entry) => entry.kind === 'team_agent')) {
-    throw new Error('team_agent is not a portable registry kind. Keep extra repos in workspace.json.');
   }
   const identities = new Set();
   const paths = new Set();
@@ -456,7 +487,7 @@ function buildLocalManifest({ repoRoot, registry }) {
   const slashCommands = Array.isArray(topology.slashCommands) ? topology.slashCommands : [];
   const pipelineEntry = registry.repos.find((entry) => entry.kind === 'pipeline');
   const workflowEntries = registry.repos.filter((entry) => entry.kind === 'workflow');
-  const listEntry = registry.repos.find((entry) => entry.kind === 'list');
+  const listEntries = registry.repos.filter((entry) => entry.kind === 'list');
   const pipelineDefinition = readChildJson({
     repoRoot,
     relPath: pipelineEntry.path,
@@ -509,6 +540,88 @@ function buildLocalManifest({ repoRoot, registry }) {
     });
   }
 
+  // ---- Persona -> Landing Page ----
+  const landingRef = published.landingPageRef && typeof published.landingPageRef === 'object'
+    ? published.landingPageRef
+    : {};
+  const landingResourceKey = String(landingRef.resourceKey || '').trim();
+  if (landingResourceKey) {
+    const source = 'publishedConfig.landingPageRef';
+    const id = `landing_page:${landingResourceKey}`;
+    const matchDir = listReferenceDirs({ repoRoot, kindDir: 'landing-pages' }).find((relPath) => {
+      const definition = readChildJson({ repoRoot, relPath, assetPath: PRIMARY_ASSET.landing_page });
+      return definition && definition.resourceKey === landingResourceKey;
+    });
+    if (!matchDir) {
+      upsertNode({
+        node: {
+          id,
+          kind: 'landing_page',
+          displayName: landingResourceKey,
+          unresolved: { reason: 'missing_git_binding', source },
+        },
+      });
+    } else {
+      const definition = readChildJson({ repoRoot, relPath: matchDir, assetPath: PRIMARY_ASSET.landing_page });
+      const node = nodeFromDir({
+        repoRoot,
+        id,
+        kind: 'landing_page',
+        displayName: previousNodeById.get(id)?.displayName || landingResourceKey,
+        relPath: matchDir,
+        allocator,
+      });
+      node.portable = {
+        resourceKey: landingResourceKey,
+        assetPath: PRIMARY_ASSET.landing_page,
+        definitionFingerprint: fingerprint({ value: definition }),
+      };
+      upsertNode({ node });
+    }
+    addEdge({ from: 'persona', to: id, relation: 'landingPageRef', source });
+  }
+
+  // ---- Persona -> Chat App (root-owned portable definition) ----
+  const chatAppPath = path.join(repoRoot, 'assets', 'chat-app.json');
+  if (fs.existsSync(chatAppPath)) {
+    const chatAppDefinition = readJson({ filePath: chatAppPath });
+    const chatAppResourceKey = String(chatAppDefinition.resourceKey || '').trim();
+    if (chatAppResourceKey) {
+      const chatAppId = `chat_app:${chatAppResourceKey}`;
+      for(const point of chatAppDefinition.chatApp?.dataPoints || []) {
+        if(point.source!=='list')continue;
+        const target=`list:${point.listRef.resourceKey}`;
+        if(!nodes.has(target))throw new Error(`Undeclared Chat App list ${point.listRef.resourceKey}`);
+        addEdge({from:chatAppId,to:target,relation:'dataPoint',source:`publishedConfig.chatApp.dataPoints.${point.id}`});
+      }
+
+      upsertNode({
+        node: {
+          id: chatAppId,
+          kind: 'chat_app',
+          displayName: previousNodeById.get(chatAppId)?.displayName || chatAppResourceKey,
+          assetPaths: ['assets/chat-app.json'],
+          portable: {
+            resourceKey: chatAppResourceKey,
+            assetPath: 'assets/chat-app.json',
+            definitionFingerprint: fingerprint({ value: chatAppDefinition }),
+          },
+        },
+      });
+      addEdge({ from: 'persona', to: chatAppId, relation: 'chatAppRef', source: 'publishedConfig.chatAppRef' });
+      const matchTarget = published.peopleMatchingConfig?.matchTarget?.listRef;
+      const matchListKey = String(matchTarget?.resourceKey || '').trim();
+      if (matchListKey && nodes.has(`list:${matchListKey}`)) {
+        addEdge({
+          from: chatAppId,
+          to: `list:${matchListKey}`,
+          relation: 'moduleDataRef',
+          source: 'chatApp.navigation.matches',
+        });
+      }
+    }
+  }
+
   const pipelineId = `pipeline:${pipelineEntry.resourceKey}`;
   for (const workflowEntry of workflowEntries) {
     const workflowId = `workflow:${workflowEntry.resourceKey}`;
@@ -529,7 +642,14 @@ function buildLocalManifest({ repoRoot, registry }) {
       addEdge({ from: workflowId, to: pipelineId, relation: 'pipelineRef', source: 'workflow.pipelineRef' });
     }
   }
-  addEdge({ from: pipelineId, to: `list:${listEntry.resourceKey}`, relation: 'listRef', source: 'pipeline.storage.listRef' });
+  for (const [index, listEntry] of listEntries.entries()) {
+    addEdge({
+      from: pipelineId,
+      to: `list:${listEntry.resourceKey}`,
+      relation: 'listRef',
+      source: index === 0 ? 'pipeline.storage.listRef' : `list.${listEntry.resourceKey}.pipelineRef`,
+    });
+  }
 
   // ---- Persona -> Workflow (slash commands) ----
   const extraWorkflowDirs = listReferenceDirs({ repoRoot, kindDir: 'workflows' });
@@ -684,6 +804,16 @@ function buildLocalManifest({ repoRoot, registry }) {
     }
   }
 
+  for (const command of slashCommands) {
+    const reference = command.execution?.workflowSkill;
+    if (!reference) continue;
+    if (command.execution.type !== 'operator_action') throw new Error('workflowSkill requires operator_action');
+    const node = nodes.get(`workflow:${command.execution.workflowRef?.resourceKey}`);
+    if (!node?.path || !node.revision) throw new Error('workflowSkill needs a pinned portable workflow');
+    const declared = readChildJson({ repoRoot, relPath: node.path, assetPath: 'assets/persona-command.json' });
+    if (JSON.stringify(declared?.workflowSkill) !== JSON.stringify(reference)) throw new Error('Published workflowSkill must match its workflow command declaration');
+    node.workflowSkill = committedPreviewPackagePin({ repoRoot, node, reference });
+  }
   const manifest = {
     schemaVersion: 1,
     updatedAt: Date.now(),
@@ -709,16 +839,24 @@ function readValidatorManifest({ cwd, node }) {
   if (manifest.schemaVersion !== VALIDATOR_MANIFEST_SCHEMA_VERSION) {
     throw new Error(`${node.id}: ${VALIDATOR_MANIFEST}.schemaVersion must be ${VALIDATOR_MANIFEST_SCHEMA_VERSION}.`);
   }
-  if (manifest.scaffold !== SCAFFOLD_BY_KIND[node.kind]) {
+  let selected = manifest;
+  if (Array.isArray(manifest.resources)) {
+    const matches = manifest.resources.filter((entry) => entry && entry.kind === node.kind);
+    if (matches.length !== 1) {
+      throw new Error(`${node.id}: ${VALIDATOR_MANIFEST}.resources must declare exactly one ${node.kind} validator group.`);
+    }
+    selected = matches[0];
+  }
+  if (selected.scaffold !== SCAFFOLD_BY_KIND[node.kind]) {
     throw new Error(`${node.id}: ${VALIDATOR_MANIFEST}.scaffold must be ${SCAFFOLD_BY_KIND[node.kind]}.`);
   }
-  if (manifest.kind !== node.kind) {
+  if (selected.kind !== node.kind) {
     throw new Error(`${node.id}: ${VALIDATOR_MANIFEST}.kind must be ${node.kind}.`);
   }
-  if (!Array.isArray(manifest.validators) || !manifest.validators.length) {
+  if (!Array.isArray(selected.validators) || !selected.validators.length) {
     throw new Error(`${node.id}: ${VALIDATOR_MANIFEST}.validators must be a non-empty array.`);
   }
-  const validators = manifest.validators.map((entry, index) => {
+  const validators = selected.validators.map((entry, index) => {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
       throw new Error(`${node.id}: ${VALIDATOR_MANIFEST}.validators[${index}] must be an object.`);
     }
@@ -833,6 +971,11 @@ function validateLocal({ repoRoot, manifest }) {
   // Full Persona -> Workflow -> Pipeline -> List relationship and fingerprints, not just
   // each file's header — otherwise a local publish passes where server import rejects.
   issues.push(...validatePortableBundle({ repoRoot }));
+  if(fs.existsSync(path.join(repoRoot,'assets/chat-app.json'))) {
+    const result=spawnSync(process.execPath,[path.join(__dirname,'validate-chat-app.js'),'assets/chat-app.json','assets/chat-config.json'],{cwd:repoRoot,encoding:'utf8'});
+    if(result.status!==0)issues.push(result.stderr || result.error?.message || 'Chat App validation failed.');
+  }
+
 
   for (const node of manifest.nodes) {
     if (node.unresolved || !node.path) continue;
@@ -1025,7 +1168,7 @@ git submodule update --init
 
 ## Portable bundle (\`registry.json\`)
 
-Import materializes one Workflow per distinct command workflowRef, plus exactly one Pipeline and one List.
+Import materializes one Workflow per distinct command workflowRef, exactly one Pipeline, and every registered domain List.
 
 | Kind | Resource key | Name | Path | Branch |
 |---|---|---|---|---|

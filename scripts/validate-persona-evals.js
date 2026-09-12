@@ -20,7 +20,13 @@ try {
 const errors = [];
 const warnings = [];
 if (!value || typeof value !== 'object' || Array.isArray(value)) errors.push('root must be an object');
-if (value.schemaVersion !== 1) errors.push('schemaVersion must be 1');
+if (![1, 2].includes(value.schemaVersion)) errors.push('schemaVersion must be 1 or 2');
+if (value.schemaVersion === 2) {
+  if (!Array.isArray(value.skills)) errors.push('v2 skills must be an array');
+  if (!value.persona || !Array.isArray(value.persona.requiredSkillIds)) errors.push('v2 persona must reference its required skills');
+  if (!Array.isArray(value.references) || !value.evaluator) errors.push('v2 requires references and evaluator configuration');
+  warnings.push('This checks document shape only. Use the authoritative server validation and owner approval actions before preparing a release.');
+}
 if (!Array.isArray(value.requirements)) errors.push('requirements must be an array');
 if (!Array.isArray(value.suites)) errors.push('suites must be an array');
 const requirementIds = new Set();
@@ -57,7 +63,8 @@ for (const [suiteIndex, suite] of (value.suites || []).entries()) {
     if (!Array.isArray(testCase.requirementIds)) errors.push(`case ${testCase.id || caseIndex} requirementIds must be an array`);
     if (!Array.isArray(testCase.assertions)) errors.push(`case ${testCase.id || caseIndex} assertions must be an array`);
     for (const assertion of (testCase.assertions || [])) {
-      if (assertion?.type === 'rubric' && assertion.blocking === true) errors.push(`case ${testCase.id}: rubric assertions cannot block schema v1`);
+      if (assertion?.type === 'rubric' && assertion.blocking === true) errors.push(`case ${testCase.id}: advisory rubric assertions cannot authorize release`);
+      if (value.schemaVersion === 2 && (!assertion?.id || !assertion?.requirementId)) errors.push(`case ${testCase.id}: v2 criteria require stable IDs and requirement references`);
     }
   }
 }
