@@ -8,7 +8,7 @@ try {
   const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
   const issues = [];
   for (const key of Object.keys(doc)) if (!['schemaVersion', 'resourceKey', 'runtimeDataPolicy', 'chatApp', 'commitMessage'].includes(key)) issues.push(`root.${key}: unknown field`);
-  if (![1, 2].includes(doc.schemaVersion)) issues.push('Unsupported schemaVersion');
+  if (![1, 2, 3].includes(doc.schemaVersion)) issues.push('Unsupported schemaVersion');
   if (doc.runtimeDataPolicy !== 'definitions_only') issues.push('runtimeDataPolicy must be definitions_only');
   if (!/^chat_app\.[a-z0-9][a-z0-9._-]*$/i.test(doc.resourceKey || '')) issues.push('Invalid resourceKey');
   if ((doc.chatApp?.schemaVersion ?? 1) !== doc.schemaVersion) issues.push('Runtime and portable schemaVersion must match');
@@ -20,10 +20,12 @@ try {
   }
   const root = path.resolve(path.dirname(file), '..');
   const registryPath = path.join(root, 'references/registry.json');
-  if (doc.schemaVersion === 2 && fs.existsSync(registryPath)) {
-    const registry=JSON.parse(fs.readFileSync(registryPath,'utf8'));
-    const sources={lists:[],pipelines:[]};
-    for(const ref of registry.repos || []) {
+  const configPath = mirror || path.join(root,'assets/chat-config.json');
+  if (fs.existsSync(configPath)) {
+    const registry=fs.existsSync(registryPath)?JSON.parse(fs.readFileSync(registryPath,'utf8')):{repos:[]};
+    const dependencyRepos=doc.schemaVersion>=2?(registry.repos||[]):[];
+    const sources={lists:[],pipelines:[],workflowKeys:dependencyRepos.filter(r=>r.kind==='workflow').map(r=>r.resourceKey)};
+    for(const ref of dependencyRepos) {
       if(!['list','pipeline'].includes(ref.kind))continue;
       const filename=path.resolve(root,ref.path,ref.assetPath);
       if(!filename.startsWith(root+path.sep))throw new Error('Unsafe resource path');
@@ -31,7 +33,10 @@ try {
       if(definition.resourceKey!==ref.resourceKey)throw new Error('Resource key mismatch');
       sources[ref.kind==='list'?'lists':'pipelines'].push(definition);
     }
-    const config=JSON.parse(fs.readFileSync(mirror || path.join(root,'assets/chat-config.json'),'utf8'));
+    const config=JSON.parse(fs.readFileSync(configPath,'utf8'));
+    const commands=(config.publishedConfig?.agentTopology?.slashCommands||[]).filter(c=>c.enabled!==false);
+    sources.commandTriggers=commands.map(c=>c.trigger);
+    sources.commandCatalog=commands.map(c=>({trigger:c.trigger,supportsAttachments:Boolean(c.attachmentInput?.inputKey),supportsIntake:Boolean(c.preRunIntake?.steps?.length),supportsVoice:c.voiceAgent?.enabled===true}));
     sources.profileId=config.publishedConfig?.roiMonitoring?.profileId;
     sources.metricIds=config.publishedConfig?.roiMonitoring?.metrics?.map(m=>m.id);
     issues.push(...validateChatAppDependencies(doc.chatApp,sources).map(i=>`${i.path}: ${i.message}`));

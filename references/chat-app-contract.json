@@ -1,0 +1,214 @@
+{
+  "schemaVersion": 3,
+  "runtimeDataPolicy": "definitions_only",
+  "allowedModuleIds": [
+    "chat-sessions",
+    "matches",
+    "assets",
+    "movie-editor",
+    "meetings",
+    "ai-resources",
+    "connections",
+    "todos",
+    "canvas",
+    "avatar",
+    "mobile"
+  ],
+  "allowedAssetTabs": [
+    "all",
+    "images",
+    "pdfs",
+    "videos",
+    "audio",
+    "other"
+  ],
+  "allowedModuleFields": [
+    "id",
+    "enabled",
+    "label",
+    "icon",
+    "assetTabs",
+    "kind",
+    "pageId"
+  ],
+  "knowledgeBase": {
+    "fixedFooterEntry": true,
+    "allowedProvisioningModes": [
+      "managed",
+      "author",
+      "runner",
+      "ask"
+    ],
+    "privateCredentialStorage": true,
+    "forbiddenPortableFields": [
+      "token",
+      "credential",
+      "credentialRef",
+      "username",
+      "remoteUrl"
+    ]
+  },
+  "requiredUtilities": [
+    "feedback",
+    "invite",
+    "settings"
+  ],
+  "forbiddenDefinitionKeys": [
+    "javascript",
+    "script",
+    "css",
+    "tailwind",
+    "runtimeData",
+    "records",
+    "credentials",
+    "apiUrl"
+  ],
+  "supportedSchemaVersions": [
+    1,
+    2,
+    3
+  ],
+  "customModulePattern": "page:<stable-page-id>",
+  "limits": {
+    "pages": 10,
+    "sectionsPerPage": 8,
+    "componentsPerPage": 24,
+    "tableRowsDefault": 25,
+    "tableRowsMaximum": 100
+  },
+  "components": [
+    "assistant-panel",
+    "cart-items",
+    "record-cards",
+    "nutrition-summary",
+    "execution-status",
+    "meal-plan",
+    "stat-card",
+    "table",
+    "outcome-metrics",
+    "outcome-trend",
+    "outcome-baseline",
+    "outcome-observations",
+    "outcome-check-in",
+    "outcome-activity",
+    "outcome-usage",
+    "outcome-signals"
+  ],
+  "dataPoints": {
+    "sources": [
+      "list",
+      "outcomes",
+      "workspace"
+    ],
+    "operations": [
+      "rows",
+      "count",
+      "sum",
+      "average"
+    ],
+    "filters": [
+      "eq",
+      "neq",
+      "in",
+      "exists",
+      "gte",
+      "lte"
+    ],
+    "virtualFields": [
+      "$stage",
+      "$createdAt",
+      "$updatedAt"
+    ],
+    "runnerScope": "server_required",
+    "externalUrls": false
+  },
+  "workspace": {
+    "template": "workspace",
+    "tabs": "ordered section references",
+    "defaultTab": "required",
+    "maximumTabs": 8,
+    "presentation": {
+      "sidebar": [
+        "brand",
+        "surface"
+      ],
+      "secondaryAccent": "six digit hex"
+    },
+    "providers": [
+      "chat",
+      "cart",
+      "catalog",
+      "recipes",
+      "nutrition",
+      "meal-plan",
+      "executions"
+    ],
+    "actions": [
+      "chat",
+      "voice",
+      "upload",
+      "command",
+      "cart.add",
+      "cart.remove",
+      "cart.quantity",
+      "cart.review",
+      "meal-plan.save"
+    ],
+    "recipeCapture": {
+      "workflowRef": "declared workflow",
+      "outputKey": "committed structured output"
+    },
+    "previewMutations": false
+  },
+  "experience": {
+    "schemaVersion": 1,
+    "independentOfChatAppSchemaVersion": true,
+    "hosts": [
+      "authenticated-full-chat",
+      "native-persona-app"
+    ],
+    "excludedHosts": [
+      "full-embed",
+      "compact-widget",
+      "anonymous-landing",
+      "internal-playground"
+    ],
+    "startTemplates": [
+      "guided-upload",
+      "guided-intake",
+      "guided-choice",
+      "guided-prompt"
+    ],
+    "actionKinds": [
+      "command",
+      "chat",
+      "voice"
+    ],
+    "resultTemplates": [
+      "narrative",
+      "spotlight",
+      "review",
+      "card-grid",
+      "media-gallery",
+      "timeline"
+    ],
+    "resultSources": [
+      "assistant-message",
+      "structured-response",
+      "bundle-proposal",
+      "item-search",
+      "pipeline-result",
+      "task-summary",
+      "pipeline-record",
+      "artifacts"
+    ],
+    "appearanceSources": [
+      "landing-page",
+      "chat-app"
+    ],
+    "commandArguments": "optional declarative text passed to the declared command",
+    "localization": "experience-owned plain-text dictionaries, independent of the parent Chat App version",
+    "referenceExample": "references/experience-example.json",
+    "previewMutations": false
+  }
+}
