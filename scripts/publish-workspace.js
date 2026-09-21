@@ -207,6 +207,21 @@ function isBuiltin({ value }) {
   return endpoint.startsWith('schema-form:') || endpoint.startsWith('image-fill:') || ['grocery-inventory:review', 'grocery-inventory:dietary', 'grocery-inventory:restock-review'].includes(endpoint);
 }
 
+function teamAgentOwnsEndpoint({ repoRoot, relPath, endpoint }) {
+  const definition = readChildJson({ repoRoot, relPath, assetPath: 'assets/team-agent.json' });
+  const candidates = [
+    definition?.endpoint?.id,
+    definition?.endpointId,
+    definition?.actionId,
+  ]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+  return candidates.some((candidate) => (
+    candidate === endpoint
+    || (!endpoint.includes(':') && candidate.endsWith(`:${endpoint}`))
+  ));
+}
+
 function toReferenceSlug({ value }) {
   const slug = String(value || '')
     .toLowerCase()
@@ -737,9 +752,22 @@ function buildLocalManifest({ repoRoot, registry }) {
     // resolution is the edge a previous server publish recorded for this exact transition.
     const previousEdge = previous.edges.find((edge) => edge.source === source && edge.relation === 'workflowEndpoint');
     const previousNode = previousEdge ? previousNodeById.get(previousEdge.to) : null;
-    const matchDir = previousNode && previousNode.path && teamAgentDirs.has(previousNode.path)
+    let matchDir = previousNode && previousNode.path && teamAgentDirs.has(previousNode.path)
       ? previousNode.path
       : null;
+
+    // One Team Agent endpoint may intentionally power several transitions (for example,
+    // draft + revise or send + save). A prior manifest records the binding per transition,
+    // so a newly added sibling transition has no exact edge to carry forward. Resolve it
+    // only when the checked-out Team Agent declares this exact endpoint and the match is
+    // unique. This is deterministic ownership metadata, not the old unsafe "only folder"
+    // guess that could bind an arbitrary agent to every endpoint.
+    if (!matchDir) {
+      const endpointMatches = [...teamAgentDirs].filter((relPath) => (
+        teamAgentOwnsEndpoint({ repoRoot, relPath, endpoint })
+      ));
+      if (endpointMatches.length === 1) [matchDir] = endpointMatches;
+    }
 
     if (!matchDir) {
       const unresolvedId = `team_agent:transition:${toReferenceSlug({ value: transitionId })}`;
@@ -755,13 +783,14 @@ function buildLocalManifest({ repoRoot, registry }) {
       continue;
     }
 
-    const agentId = previousNode.id;
+    const matchedDefinition = readChildJson({ repoRoot, relPath: matchDir, assetPath: 'assets/team-agent.json' });
+    const agentId = previousNode?.id || `team_agent:${toReferenceSlug({ value: path.basename(matchDir) })}`;
     upsertNode({
       node: nodeFromDir({
         repoRoot,
         id: agentId,
         kind: 'team_agent',
-        displayName: previousNode.displayName || path.basename(matchDir),
+        displayName: previousNode?.displayName || String(matchedDefinition?.endpoint?.name || path.basename(matchDir)),
         relPath: matchDir,
         allocator,
       }),
@@ -807,13 +836,24 @@ function buildLocalManifest({ repoRoot, registry }) {
   }
 
   for (const command of slashCommands) {
-    const reference = command.execution?.workflowSkill;
+    const journey = command.guidedJourney;
+    const reference = journey?.enabled === true
+      ? {
+          path: journey.packagePath,
+          mode: journey.rolloutMode === 'active' ? 'skill' : 'shadow',
+        }
+      : command.execution?.workflowSkill;
     if (!reference) continue;
-    if (command.execution.type !== 'operator_action') throw new Error('workflowSkill requires operator_action');
+    if (command.execution?.type !== 'operator_action') continue;
     const node = nodes.get(`workflow:${command.execution.workflowRef?.resourceKey}`);
-    if (!node?.path || !node.revision) throw new Error('workflowSkill needs a pinned portable workflow');
-    const declared = readChildJson({ repoRoot, relPath: node.path, assetPath: 'assets/persona-command.json' });
-    if (JSON.stringify(declared?.workflowSkill) !== JSON.stringify(reference)) throw new Error('Published workflowSkill must match its workflow command declaration');
+    if (!node?.path || !node.revision) throw new Error('guided journey needs a pinned portable workflow');
+    // Legacy workflowSkill remains cross-checked with the child declaration while
+    // guidedJourney is canonical in the Persona command and needs no duplicate
+    // child command metadata. Both routes pin the immutable committed package.
+    if (journey?.enabled !== true) {
+      const declared = readChildJson({ repoRoot, relPath: node.path, assetPath: 'assets/persona-command.json' });
+      if (JSON.stringify(declared?.workflowSkill) !== JSON.stringify(reference)) throw new Error('Published workflowSkill must match its workflow command declaration');
+    }
     node.workflowSkill = committedPreviewPackagePin({ repoRoot, node, reference });
   }
   const manifest = {

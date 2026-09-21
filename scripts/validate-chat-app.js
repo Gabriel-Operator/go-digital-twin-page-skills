@@ -35,8 +35,9 @@ try {
     }
     const config=JSON.parse(fs.readFileSync(configPath,'utf8'));
     const commands=(config.publishedConfig?.agentTopology?.slashCommands||[]).filter(c=>c.enabled!==false);
+    sources.commandIds=commands.map(c=>c.id).filter(id=>typeof id==='string'&&id.length>0);
     sources.commandTriggers=commands.map(c=>c.trigger);
-    sources.commandCatalog=commands.map(c=>({trigger:c.trigger,supportsAttachments:Boolean(c.attachmentInput?.inputKey),supportsIntake:Boolean(c.preRunIntake?.steps?.length),supportsVoice:c.voiceAgent?.enabled===true}));
+    sources.commandCatalog=commands.map(c=>({id:c.id,trigger:c.trigger,supportsAttachments:Boolean(c.attachmentInput?.inputKey),supportsIntake:Boolean(c.preRunIntake?.steps?.length),supportsVoice:c.voiceAgent?.enabled===true}));
     sources.profileId=config.publishedConfig?.roiMonitoring?.profileId;
     sources.metricIds=config.publishedConfig?.roiMonitoring?.metrics?.map(m=>m.id);
     issues.push(...validateChatAppDependencies(doc.chatApp,sources).map(i=>`${i.path}: ${i.message}`));

@@ -28,7 +28,6 @@ const FORBIDDEN_DEFINITION_FIELDS = [
   'listId',
   'actionId',
   'automationId',
-  'commandId',
   'recordId',
   'runId',
   'activeDataListId',
@@ -257,6 +256,11 @@ function validatePortableBundle({ repoRoot, registry: candidateRegistry }) {
     issues,
   });
   definitions.lists.forEach((definition, index) => {
+    // Standalone domain collections need no pipeline. The pipeline's storage
+    // collection must still declare the reciprocal binding.
+    const storageListKey = definitions.pipeline.storage?.listRef?.resourceKey;
+    if (definition.list && definition.list.pipelineRef === undefined
+      && listEntries[index].resourceKey !== storageListKey) return;
     checkRef({
       owner: `list:${listEntries[index].resourceKey}.list`,
       refs: collectRefs({ value: definition.list || {}, key: 'pipelineRef' }),

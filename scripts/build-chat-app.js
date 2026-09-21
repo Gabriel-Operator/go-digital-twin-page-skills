@@ -11,9 +11,10 @@ try{
  if(node?.path)throw new Error('Use the pinned child workflow for an external Chat App.');
  if(!node){node={id:`chat_app:${asset.resourceKey}`,kind:'chat_app',displayName:'Persona Chat App',assetPaths:['assets/chat-app.json']};workspace.nodes.push(node);}
  node.portable={resourceKey:asset.resourceKey,assetPath:'assets/chat-app.json',definitionFingerprint:crypto.createHash('sha256').update(stable(asset)).digest('hex')};
- workspace.edges=workspace.edges.filter(e=>!(e.from===node.id&&e.relation==='dataPoint'));
+ workspace.edges=workspace.edges.filter(e=>!(e.from===node.id&&['dataPoint','capture'].includes(e.relation)));
  if(!workspace.edges.some(e=>e.from==='persona'&&e.to===node.id))workspace.edges.push({from:'persona',to:node.id,relation:'chatAppRef',source:'publishedConfig.chatAppRef'});
- for(const point of asset.chatApp.dataPoints||[]){if(point.source!=='list')continue;const target=workspace.nodes.find(n=>n.kind==='list'&&n.portable?.resourceKey===point.listRef.resourceKey);if(!target)throw new Error(`Undeclared dependency ${point.listRef.resourceKey}`);workspace.edges.push({from:node.id,to:target.id,relation:'dataPoint',source:`publishedConfig.chatApp.dataPoints.${point.id}`});}
+ for(const point of asset.chatApp.dataPoints||[]){if(!['list','workspace'].includes(point.source)||!point.listRef)continue;const target=workspace.nodes.find(n=>n.kind==='list'&&n.portable?.resourceKey===point.listRef.resourceKey);if(!target)throw new Error(`Undeclared dependency ${point.listRef.resourceKey}`);workspace.edges.push({from:node.id,to:target.id,relation:'dataPoint',source:`publishedConfig.chatApp.dataPoints.${point.id}`});}
+ for(const point of asset.chatApp.dataPoints||[]){if(!point.capture)continue;const target=workspace.nodes.find(n=>n.kind==='workflow'&&n.portable?.resourceKey===point.capture.workflowRef.resourceKey);if(!target)throw new Error(`Undeclared capture workflow ${point.capture.workflowRef.resourceKey}`);workspace.edges.push({from:node.id,to:target.id,relation:'capture',source:`publishedConfig.chatApp.dataPoints.${point.id}.capture`});}
  workspace.nodes.sort((a,b)=>a.id.localeCompare(b.id));workspace.edges.sort((a,b)=>`${a.from}:${a.to}:${a.source}`.localeCompare(`${b.from}:${b.to}:${b.source}`));
  const files={'assets/chat-config.json':config,'references/workspace.json':workspace};
  const changed=Object.entries(files).filter(([name,value])=>stable(read(name))!==stable(value));
