@@ -2,6 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { validateChatAppConfig, validateChatAppDependencies, stableChatAppJson } = require('./chat-app-model.cjs');
+const { validatePersonalizationAsset } = require('./validate-personalization.cjs');
 const file = process.argv[2] || 'assets/chat-app.json';
 const mirror = process.argv[3];
 try {
@@ -40,6 +41,7 @@ try {
     sources.commandCatalog=commands.map(c=>({id:c.id,trigger:c.trigger,supportsAttachments:Boolean(c.attachmentInput?.inputKey),supportsIntake:Boolean(c.preRunIntake?.steps?.length),supportsVoice:c.voiceAgent?.enabled===true}));
     sources.profileId=config.publishedConfig?.roiMonitoring?.profileId;
     sources.metricIds=config.publishedConfig?.roiMonitoring?.metrics?.map(m=>m.id);
+    issues.push(...validatePersonalizationAsset(config.publishedConfig?.personalization, { sources }));
     issues.push(...validateChatAppDependencies(doc.chatApp,sources).map(i=>`${i.path}: ${i.message}`));
   }
   if (issues.length) throw new Error(issues.join('\n'));

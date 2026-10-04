@@ -5,6 +5,10 @@ description: Maintain git-backed AI Persona state and release quality via assets
 
 # AI Persona Skill
 
+## Offline-first contract
+
+Read [the embedded runtime contract](references/offline-runtime-v1.md). Portable Persona Git assets remain definitions only. Offline preparation may copy authorized definitions and knowledge into encrypted device storage, while chat, records, runs, checkpoints, conflicts, device preferences, and secrets remain runtime state. Validate nested playbook dependencies and publish their capability report with the prepared pack.
+
 ## Portable Git contract (schema v2)
 
 Author new and cross-environment persona assets with stable model identity:
@@ -85,6 +89,8 @@ An update uses optimistic `expectedHeadSha`, modifies only `assets/persona-evals
 For legacy v1 personas, Quality control is opt-in through `publishedConfig.qualityControlConfig.enabled === true`. Missing or false means the seventh **Quality** tab, the owner-only live/mobile Quality views, and release gating remain disabled; this preserves legacy Persona behavior. Enable it from the create/edit Persona **Features** tab. Subscriber testing is a separate nested opt-in: `subscriberSimulationEnabled` is effective only when the parent is enabled, defaults to false, and must be written back as false when Quality is disabled. When both are enabled, every subscriber-facing command needs a required mock subscriber case and **Subscriber experience** becomes a release dimension. Owners also receive `Viewing as: Author | Subscriber simulation` in the Persona header. The preview uses a one-time, owner/page/candidate-bound session and never creates an impersonation login. Plain-text free exploration uses the exact candidate prompt/model in a tool-free subscriber lane; configured Operator and Canvas commands use fresh isolated list/pipeline copies, declared fixtures, and the production executor. Free exploration is mock-only and never satisfies readiness. Gateway tools may run `runAs: subscriber` cases but never accept actor ids or create browser previews. The Quality overview separates the persona benchmark from its skills. Each detail screen contains Tests, Definition of Ready, Definition of Done and History. V2 release enforcement survives disabling the display toggle. The same owner-only tab appears in the live Persona experience and links each case to Canvas. Visitors never see eval controls or data. Mobile owners can inspect actor-labelled readiness/history, run or cancel suites, and open Canvas; v1 mobile does not author the specification or interactively impersonate. Inventory-generated requirement prompts are drafts until the owner confirms them.
 
 ## Goal
+The parent Persona also owns one optional `assets/ontology.json`, independent of country/language variants and child repositories. Use the `persona-ontology` skill to define stable entity, attribute, and relationship identifiers or validate Data Feed references. Ontologies hold definitions only; existing Lists/JSON/Mongo and state-machine mutations remain unchanged. Legacy personas may omit the file.
+
 Maintain one AI Persona configuration per repository. The `assets/chat-config.json` file is the source of truth for the page's **display profile** (`pageProfile`: title, description, avatar, banners, tags, taxonomy) and **published AI runtime** (`publishedConfig`: assistant name, prompts, voice, connectors, tools, etc.) when a git repository is connected.
 
 Embed appearance is no longer owned by this file. For hero copy, themes, backgrounds, public about panels, conversion blocks, and widget appearance, use the separate embed config skill and edit `assets/embed-config.json`.
@@ -240,6 +246,27 @@ The runner channel list belongs to the workflow task (`allowedChannels`:
 `in_app_voice`, `phone`, `email`, `persona_channels`). `chat-config.json`
 continues to own only the normal Chat app configuration and slash-command
 registration.
+
+The authenticated Chat App definition is authored separately in
+`assets/chat-app.json` and mirrored exactly into `publishedConfig.chatApp` while
+preserving `publishedConfig.chatAppRef.resourceKey`. New and updated persona
+journeys should set `chatApp.experience.sessionMode` to `"stepper"` unless the
+user explicitly requests legacy transcript-first behavior. Stepper mode keeps
+new, resumed, edited, and completed sessions in the guided renderer on web and
+native. Its current step, answers, uploads, preview token, and terminal state are
+server-owned runtime data keyed to the authenticated chat session; never write
+them into this repository. Reopening a completed session must show its final
+confirmation and next actions without executing or claiming it again.
+
+For a Signals destination, keep its `source: "workspace"`, `provider:
+"automations"` data point and optional `signalPresets` identical in both files.
+Each preset is a disabled portable template and may contain only a stable id,
+title/description, a portable list resource key, and a declared command action
+id. Runtime automation ids, enabled state, schedules, observations, audit
+history, credentials, and runner records are never stored in this repository.
+After changing the Chat App through Gateway, patch the complete validated
+definition with `gabriel_update_twin_config` and mirror the same definition in
+Git; after a Git-first edit, follow the normal sync/publish path.
 
 Questionnaire draft prefill is also runtime. When Collect starts, Canvas
 suggests answers from, in order: a prior List row for this form (Pipeline
@@ -527,6 +554,8 @@ These keys mirror the **public page record**. On sync from DB, all keys are alwa
 
 **Never put in `pageProfile`:** `pageSlug`, `visibility`, `sharedWith`, credits, owner ids, API keys, Twilio secrets—those stay database-only.
 
+`profilePicture` and `bannerImage` need an existing URL. If you have image bytes instead (a generated avatar, an uploaded file) rather than a URL, call `gabriel_upload_asset` first to get a hosted URL, then write that URL into `pageProfile`.
+
 ---
 
 ### Embed appearance moved
@@ -632,6 +661,7 @@ When a coding agent **edits git**, treat `publishedConfig` as the same shape the
 | `formUi` | Optional form/cart UI configuration used by the page chat surface; merged from draft so git has the active UI behavior. |
 | `chatImageUpload` | Optional image-upload and image-resolver configuration for chat; merged from draft into git when present. |
 | `landingPage` | Optional only when no marketing page exists. Every newly created landing page must include enabled schema-v2 localization, IP-country language detection, and the source-revisioned generated cache produced by `landing-page-translations`. |
+| `chatApp` | Authenticated Chat App definition mirrored from `assets/chat-app.json`. Preserve `chatAppRef.resourceKey`. New persona experiences default to `sessionMode: "stepper"`; Git stores only the stable definition, including disabled portable `signalPresets`, while per-session journey and automation state stays in runtime storage. |
 | `todosConfig` | Optional `{ "enabled": boolean }`. Product default when omitted is **on**. New personas must persist `{ "enabled": false }`. Do not enable To-Dos or invoke `todo-builder` on create. |
 | `qualityControlConfig` | Optional `{ "enabled": boolean, "subscriberSimulationEnabled"?: boolean }`. Both default false. Subscriber simulation is effective only when both are explicitly true; disabling Quality must persist the nested flag as false. The full object is merged from draft into git and fingerprints the release candidate. |
 | `agentTopology` | Runtime agent topology for multi-supervisor, built-in subagents, custom subagents, and **slash command registration** (`slashCommands`); merged from draft into git when present. Each operator command that should appear in Talk must include command-level `voiceAgent.enabled` plus a non-empty `prompt`. Registration only — slash-command **debug graphs** are not stored in this file (see workflow-builder / `assets/slash-connections.json` on the bound workflow repo). |
@@ -873,3 +903,20 @@ Output files written to `/workspace/output/` inside the sandbox are extracted fr
 - Passwords and public-access flags are not stored in git; they are managed via the database only (`visibility`, `sharedWith`, `pageSlug`, etc. remain DB-only).
 - Default-branch updates sync back into the AI Persona configuration automatically when the product runs a sync to git.
 - Older repos may omit `pageProfile` until the next successful sync or pull; the backend treats missing `pageProfile` as valid for reads and fills it on the next write.
+
+## Automatic audience versions and global country
+
+Use `publishedConfig.personalization` for a global-country baseline plus country,
+language, saved-profile/custom or individual authenticated versions of a whole
+Persona presentation. Configure it in Chat Publish → Audience versions. It can
+change the name, avatar, landing theme/layout, embed appearance and signed-in app.
+Read [the presentation contract](references/personalization.md)
+for precedence, JSON, hierarchy, trusted profile matching and bounded prompt
+generation. Empty country/language lists mean all; global precedes country/language
+and the matched authenticated audience. Never expose a country selector in the
+public header. Use styled form primitives and `app/components/Select.tsx`.
+
+Prompts adapt editable copy through the existing country generation jobs and
+policies; complete layouts are authored validated config. Translations and
+generated assets live under their matched variant and cannot use a shared global
+translation cache. Preserve human approvals, real-data boundaries and access checks.

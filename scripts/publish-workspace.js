@@ -204,7 +204,12 @@ function normalizeRepoRelativePath({ value, label }) {
 
 function isBuiltin({ value }) {
   const endpoint = String(value || '').trim().toLowerCase();
-  return endpoint.startsWith('schema-form:') || endpoint.startsWith('image-fill:') || ['grocery-inventory:review', 'grocery-inventory:dietary', 'grocery-inventory:restock-review'].includes(endpoint);
+  return endpoint.startsWith('schema-form:') || endpoint.startsWith('image-fill:') || [
+    'grocery-inventory:review', 'grocery-inventory:dietary', 'grocery-inventory:restock-review',
+    'scrap-operations:intake', 'scrap-operations:society-drive', 'scrap-operations:recurring-pickup',
+    'scrap-operations:certificate', 'scrap-operations:quote', 'scrap-operations:dispatch-plan',
+    'scrap-operations:reconcile', 'scrap-operations:payout-plan', 'scrap-operations:prepare-business',
+  ].includes(endpoint);
 }
 
 function teamAgentOwnsEndpoint({ repoRoot, relPath, endpoint }) {
@@ -342,17 +347,18 @@ function parseRegistry({ repoRoot }) {
   }
   // A persona binds one registry Workflow per distinct workflowRef; commands may share it.
   const workflowCount = registry.repos.filter((entry) => entry.kind === 'workflow').length;
+  const pipelineCount = registry.repos.filter((entry) => entry.kind === 'pipeline').length;
   const listCount = registry.repos.filter((entry) => entry.kind === 'list').length;
   const kinds = new Set(registry.repos.map((entry) => entry.kind));
   if (!kinds.has('workflow') || !kinds.has('pipeline') || !kinds.has('list')) {
-    throw new Error('references/registry.json must contain at least one workflow, exactly one pipeline, and at least one list.');
+    throw new Error('references/registry.json must contain at least one workflow, pipeline, and list.');
   }
   if (registry.repos.some((entry) => entry.kind === 'team_agent')) {
     throw new Error('team_agent is not a portable registry kind. Preserve its declaration in workspace.json before publishing.');
   }
-  if (registry.repos.length !== workflowCount + listCount + 1) {
+  if (registry.repos.length !== workflowCount + pipelineCount + listCount) {
     throw new Error(
-      `references/registry.json must contain exactly one Pipeline, every List, and one Workflow per distinct workflowRef — expected ${workflowCount + listCount + 1}, found ${registry.repos.length}.`,
+      `references/registry.json must contain every Pipeline, every List, and one Workflow per distinct workflowRef — expected ${workflowCount + pipelineCount + listCount}, found ${registry.repos.length}.`,
     );
   }
   const identities = new Set();
@@ -502,18 +508,25 @@ function buildLocalManifest({ repoRoot, registry }) {
     ? published.agentTopology
     : {};
   const slashCommands = Array.isArray(topology.slashCommands) ? topology.slashCommands : [];
-  const pipelineEntry = registry.repos.find((entry) => entry.kind === 'pipeline');
+  const pipelineEntries = registry.repos.filter((entry) => entry.kind === 'pipeline');
   const workflowEntries = registry.repos.filter((entry) => entry.kind === 'workflow');
   const listEntries = registry.repos.filter((entry) => entry.kind === 'list');
-  const pipelineDefinition = readChildJson({
-    repoRoot,
-    relPath: pipelineEntry.path,
-    assetPath: pipelineEntry.assetPath || 'assets/pipeline.json',
+  const pipelineContexts = pipelineEntries.map((entry) => {
+    const definition = readChildJson({
+      repoRoot,
+      relPath: entry.path,
+      assetPath: entry.assetPath || 'assets/pipeline.json',
+    });
+    const nested = definition && definition.pipeline && typeof definition.pipeline === 'object'
+      ? definition.pipeline
+      : definition || {};
+    return { entry, definition, nested, pipelineId: `pipeline:${entry.resourceKey}` };
   });
-  const nested = pipelineDefinition && pipelineDefinition.pipeline && typeof pipelineDefinition.pipeline === 'object'
-    ? pipelineDefinition.pipeline
-    : pipelineDefinition || {};
-  const transitions = Array.isArray(nested.transitions) ? nested.transitions : [];
+  const transitions = pipelineContexts.flatMap((context) => (
+    Array.isArray(context.nested.transitions)
+      ? context.nested.transitions.map((transition) => ({ ...transition, __pipelineId: context.pipelineId }))
+      : []
+  ));
 
   const previous = readPreviousManifest({ repoRoot });
   const previousNodeById = new Map(previous.nodes.map((node) => [node.id, node]));
@@ -639,7 +652,6 @@ function buildLocalManifest({ repoRoot, registry }) {
     }
   }
 
-  const pipelineId = `pipeline:${pipelineEntry.resourceKey}`;
   for (const workflowEntry of workflowEntries) {
     const workflowId = `workflow:${workflowEntry.resourceKey}`;
     // `to` already disambiguates these per workflow, so the source label stays
@@ -650,22 +662,30 @@ function buildLocalManifest({ repoRoot, registry }) {
       relPath: workflowEntry.path,
       assetPath: workflowEntry.assetPath,
     });
-    if (hasPortableRef({
-      value: workflowDefinition,
-      key: 'pipelineRef',
-      kind: 'pipeline',
-      resourceKey: pipelineEntry.resourceKey,
-    })) {
-      addEdge({ from: workflowId, to: pipelineId, relation: 'pipelineRef', source: 'workflow.pipelineRef' });
+    for (const pipelineEntry of pipelineEntries) {
+      if (hasPortableRef({
+        value: workflowDefinition,
+        key: 'pipelineRef',
+        kind: 'pipeline',
+        resourceKey: pipelineEntry.resourceKey,
+      })) {
+        addEdge({ from: workflowId, to: `pipeline:${pipelineEntry.resourceKey}`, relation: 'pipelineRef', source: 'workflow.pipelineRef' });
+      }
     }
   }
-  for (const [index, listEntry] of listEntries.entries()) {
-    addEdge({
-      from: pipelineId,
-      to: `list:${listEntry.resourceKey}`,
-      relation: 'listRef',
-      source: index === 0 ? 'pipeline.storage.listRef' : `list.${listEntry.resourceKey}.pipelineRef`,
-    });
+  for (const listEntry of listEntries) {
+    const listDefinition = readChildJson({ repoRoot, relPath: listEntry.path, assetPath: listEntry.assetPath });
+    const reciprocalKey = String(listDefinition?.list?.pipelineRef?.resourceKey || '').trim();
+    const storageContext = pipelineContexts.find((context) => context.definition?.storage?.listRef?.resourceKey === listEntry.resourceKey);
+    const pipelineKey = storageContext?.entry.resourceKey || reciprocalKey;
+    if (pipelineKey && pipelineEntries.some((entry) => entry.resourceKey === pipelineKey)) {
+      addEdge({
+        from: `pipeline:${pipelineKey}`,
+        to: `list:${listEntry.resourceKey}`,
+        relation: 'listRef',
+        source: storageContext ? 'pipeline.storage.listRef' : `list.${listEntry.resourceKey}.pipelineRef`,
+      });
+    }
   }
 
   // ---- Persona -> Workflow (slash commands) ----
@@ -743,6 +763,7 @@ function buildLocalManifest({ repoRoot, registry }) {
   // ---- Pipeline -> Team Agent, and Team Agent -> child Workflow ----
   const teamAgentDirs = new Set(listReferenceDirs({ repoRoot, kindDir: 'team-agents' }));
   for (const transition of transitions) {
+    const pipelineId = transition.__pipelineId;
     const transitionId = String(transition.id || '').trim();
     const endpoint = String(transition.workflowEndpointId || '').trim();
     if (!transitionId || !endpoint || isBuiltin({ value: endpoint })) continue;
@@ -1210,7 +1231,7 @@ git submodule update --init
 
 ## Portable bundle (\`registry.json\`)
 
-Import materializes one Workflow per distinct command workflowRef, exactly one Pipeline, and every registered domain List.
+Import materializes one Workflow per distinct command workflowRef and every registered Pipeline and domain List.
 
 | Kind | Resource key | Name | Path | Branch |
 |---|---|---|---|---|

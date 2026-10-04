@@ -15,6 +15,7 @@ exports.resolveChatAppCoachAllowedCommandTriggers = resolveChatAppCoachAllowedCo
 exports.resolveChatAppCoachAllowedToolNames = resolveChatAppCoachAllowedToolNames;
 exports.validateChatAppListFields = validateChatAppListFields;
 exports.validateChatAppDependencies = validateChatAppDependencies;
+exports.omitDataFeedWorkspace = omitDataFeedWorkspace;
 exports.CHAT_APP_COMPONENT_TYPES = [
     "assistant-panel",
     "cart-items",
@@ -23,8 +24,12 @@ exports.CHAT_APP_COMPONENT_TYPES = [
     "execution-status",
     "playbook-list",
     "routine-list",
+    "signal-list",
+    "data-feed-list",
+    "schedule-calendar",
     "goal-list",
     "meal-plan",
+    "inventory-list",
     "stat-card",
     "table",
     "outcome-metrics",
@@ -55,10 +60,10 @@ function validateWorkspaceFieldMappings(point, columns) {
             : [];
     });
 }
-exports.CHAT_APP_WORKSPACE_PROVIDERS = ["chat", "coach", "cart", "catalog", "recipes", "nutrition", "meal-plan", "executions", "routines", "goals"];
+exports.CHAT_APP_WORKSPACE_PROVIDERS = ["chat", "coach", "cart", "catalog", "recipes", "nutrition", "meal-plan", "executions", "routines", "automations", "goals", "data-feeds"];
 /** Which workspace provider(s) each workspace-backed component type accepts. Shared by the validator and the forward-compatibility sanitizer below. */
-exports.CHAT_APP_COMPONENT_PROVIDERS = { "assistant-panel": ["chat", "coach"], "cart-items": ["cart"], "record-cards": ["catalog", "recipes"], "nutrition-summary": ["nutrition"], "execution-status": ["executions"], "playbook-list": ["executions"], "routine-list": ["routines"], "goal-list": ["goals"], "meal-plan": ["meal-plan"] };
-exports.CHAT_APP_ACTION_KINDS = ["chat", "voice", "upload", "command", "cart.add", "cart.remove", "cart.quantity", "cart.review", "meal-plan.save", "routine.create", "routine.update", "routine.run", "routine.pause", "routine.delete"];
+exports.CHAT_APP_COMPONENT_PROVIDERS = { "assistant-panel": ["chat", "coach"], "cart-items": ["cart"], "record-cards": ["catalog", "recipes"], "nutrition-summary": ["nutrition"], "execution-status": ["executions"], "playbook-list": ["executions"], "routine-list": ["routines"], "signal-list": ["automations"], "data-feed-list": ["data-feeds"], "schedule-calendar": ["automations"], "goal-list": ["goals"], "meal-plan": ["meal-plan"] };
+exports.CHAT_APP_ACTION_KINDS = ["chat", "voice", "upload", "command", "cart.add", "cart.remove", "cart.quantity", "cart.review", "meal-plan.save", "routine.create", "routine.update", "routine.run", "routine.pause", "routine.delete", "automation.create", "automation.update", "automation.run", "automation.pause", "automation.delete", "automation.test"];
 exports.CHAT_APP_EXPERIENCE_START_TEMPLATES = [
     "guided-upload",
     "guided-intake",
@@ -872,13 +877,20 @@ function validateDashboardDefinitions(app, issues) {
                 issue(`${at}.metricId`, "Invalid metric.");
         }
         else if (p.source === "workspace" && app.schemaVersion === 3) {
-            rejectUnknownKeys(issues, value, ["id", "source", "provider", "view", "listRef", "fields", "currency", "capture"], at);
+            rejectUnknownKeys(issues, value, ["id", "source", "provider", "view", "listRef", "fields", "currency", "capture", "signalPresets"], at);
             if (p.currency !== undefined && !/^[A-Z]{3}$/.test(p.currency))
                 issue(at, 'Use a declared ISO currency for a source with fixed denomination.');
             if (!exports.CHAT_APP_WORKSPACE_PROVIDERS.includes(p.provider))
                 issue(at, "Unknown workspace provider.");
-            if (p.view !== undefined && (p.provider !== "executions" || !["workflows", "playbooks", "executions"].includes(p.view)))
-                issue(`${at}.view`, "Execution views support playbooks or executions.");
+            if (p.view !== undefined) {
+                const validView = p.provider === "executions"
+                    ? ["workflows", "playbooks", "executions"].includes(p.view)
+                    : p.provider === "automations"
+                        ? ["signals", "schedule", "legacy"].includes(p.view)
+                        : false;
+                if (!validView)
+                    issue(`${at}.view`, "Select a view supported by this workspace provider.");
+            }
             if (["catalog", "recipes", "meal-plan", "cart", "nutrition"].includes(p.provider) && !p.listRef)
                 issue(at, "This provider requires a declared portable list.");
             if (p.listRef && (!isRecord(p.listRef) || p.listRef.kind !== "list" || !/^list\.[a-z0-9][a-z0-9._-]+$/.test(p.listRef.resourceKey)))
@@ -895,6 +907,34 @@ function validateDashboardDefinitions(app, issues) {
             }
             if (p.fields && (!isRecord(p.fields) || Object.keys(p.fields).length > 30 || Object.entries(p.fields).some(([k, v]) => !field(k) || !field(v))))
                 issue(at, "Use declared scalar field mappings.");
+            if (p.signalPresets !== undefined) {
+                if (p.provider !== "automations" || !Array.isArray(p.signalPresets) || p.signalPresets.length > 50)
+                    issue(`${at}.signalPresets`, "Use up to 50 signal presets on an automations provider.");
+                else {
+                    const presetIds = new Set();
+                    for (const [presetIndex, preset] of p.signalPresets.entries()) {
+                        const presetAt = `${at}.signalPresets[${presetIndex}]`;
+                        if (!isRecord(preset)) {
+                            issue(presetAt, "Invalid signal preset.");
+                            continue;
+                        }
+                        rejectUnknownKeys(issues, preset, ["id", "title", "description", "sourceListRef", "actionId"], presetAt);
+                        if (!slug(preset.id) || presetIds.has(String(preset.id)))
+                            issue(`${presetAt}.id`, "Use a unique signal preset id.");
+                        presetIds.add(String(preset.id));
+                        if (typeof preset.title !== "string" || !preset.title.trim() || preset.title.length > 160)
+                            issue(`${presetAt}.title`, "Signal preset title is required.");
+                        if (preset.description !== undefined && (typeof preset.description !== "string" || preset.description.length > 500))
+                            issue(`${presetAt}.description`, "Signal preset description is too long.");
+                        if (preset.sourceListRef !== undefined && (!isRecord(preset.sourceListRef) || preset.sourceListRef.kind !== "list" || !/^list\.[a-z0-9][a-z0-9._-]+$/.test(String(preset.sourceListRef.resourceKey))))
+                            issue(`${presetAt}.sourceListRef`, "Use a portable list reference.");
+                        if (isRecord(preset.sourceListRef))
+                            rejectUnknownKeys(issues, preset.sourceListRef, ["kind", "resourceKey"], `${presetAt}.sourceListRef`);
+                        if (preset.actionId !== undefined && !slug(preset.actionId))
+                            issue(`${presetAt}.actionId`, "Use a declared command action id.");
+                    }
+                }
+            }
         }
         else
             issue(`${at}.source`, "Unsupported data source.");
@@ -912,6 +952,7 @@ function validateDashboardDefinitions(app, issues) {
             issue(`${at}.id`, "Use a unique page identifier.");
         if ((MODULE_IDS.has(p.id) && p.id !== "dashboard") ||
             [
+                "audit-logs",
                 "feedback",
                 "invite",
                 "settings",
@@ -990,9 +1031,9 @@ function validateDashboardDefinitions(app, issues) {
                     c.type.startsWith("outcome-") &&
                     (point?.source !== "outcomes" || c.type !== `outcome-${point.result}`))
                     issue(ct, "This component requires the corresponding outcomes result.");
-                if (c.type === "table" &&
+                if ((c.type === "table" || c.type === "inventory-list") &&
                     (point?.source !== "list" || point.operation !== "rows"))
-                    issue(ct, "A table requires a list row query.");
+                    issue(ct, "This component requires a list row query.");
                 if (c.type === "stat-card" &&
                     point?.source === "list" &&
                     point.operation === "rows")
@@ -1203,6 +1244,16 @@ function validateChatAppDependencies(app, sources) {
         }
     }
     for (const point of app.dataPoints || []) {
+        if (point.source === "workspace" && point.provider === "automations") {
+            for (const preset of point.signalPresets || []) {
+                if (preset.sourceListRef && !sources.lists.some((source) => source.resourceKey === preset.sourceListRef?.resourceKey)) {
+                    issues.push({
+                        path: `dataPoints.${point.id}.signalPresets.${preset.id}.sourceListRef`,
+                        message: "Signal preset list is not declared in the persona registry.",
+                    });
+                }
+            }
+        }
         if (point.source === "workspace" &&
             point.capture &&
             !sources.workflowKeys?.includes(point.capture.workflowRef.resourceKey))
@@ -1310,6 +1361,17 @@ function validateWorkspaceDefinitions(app, issues) {
             issue("actions.dataPoint", "Select a catalog provider.");
         if (String(a.kind).startsWith("routine.") && !points.some(p => p.id === a.dataPoint && p.source === "workspace" && p.provider === "routines"))
             issue("actions.dataPoint", "Select a routines provider.");
+        if (String(a.kind).startsWith("automation.") && !points.some(p => p.id === a.dataPoint && p.source === "workspace" && p.provider === "automations"))
+            issue("actions.dataPoint", "Select an automations provider.");
+    }
+    for (const point of points) {
+        if (point.source !== "workspace" || point.provider !== "automations")
+            continue;
+        for (const preset of point.signalPresets || []) {
+            if (preset.actionId !== undefined && !actions.some((action) => isRecord(action) && action.id === preset.actionId && action.kind === "command")) {
+                issue(`dataPoints.${point.id}.signalPresets.${preset.id}.actionId`, "Select a declared command action.");
+            }
+        }
     }
     if (app.coach !== undefined) {
         if (!isRecord(app.coach))
@@ -1413,7 +1475,7 @@ function validateWorkspaceDefinitions(app, issues) {
             for (const c of (Array.isArray(section?.components) ? section.components : [])) {
                 if (!isRecord(c))
                     continue;
-                if (c.actions !== undefined && (!Array.isArray(c.actions) || c.actions.length > 8 || c.actions.some((id) => !ids.has(id))))
+                if (c.actions !== undefined && (!Array.isArray(c.actions) || c.actions.length > 16 || c.actions.some((id) => !ids.has(id))))
                     issue("components.actions", "Select declared actions.");
                 const p = points.find(p => p.id === c.dataPoint);
                 if (typeof c.type === "string" && exports.CHAT_APP_COMPONENT_PROVIDERS[c.type] && (p?.source !== "workspace" || !exports.CHAT_APP_COMPONENT_PROVIDERS[c.type].includes(p.provider)))
@@ -1494,6 +1556,7 @@ function validateExperienceDefinitions(app, issues) {
     rejectUnknownKeys(issues, experience, [
         "schemaVersion",
         "enabled",
+        "sessionMode",
         "appearance",
         "actions",
         "freshChat",
@@ -1504,6 +1567,9 @@ function validateExperienceDefinitions(app, issues) {
         issue("experience.schemaVersion", "Unsupported Chat App experience version.");
     if (typeof experience.enabled !== "boolean")
         issue("experience.enabled", "Enabled must be a boolean.");
+    if (experience.sessionMode !== undefined &&
+        !["chat", "stepper"].includes(String(experience.sessionMode)))
+        issue("experience.sessionMode", "Session mode must be chat or stepper.");
     if (experience.appearance !== undefined) {
         if (!isRecord(experience.appearance))
             issue("experience.appearance", "Appearance must be an object.");
@@ -1700,4 +1766,20 @@ function validateExperienceDefinitions(app, issues) {
                 }
         }
     }
+}
+/** Preserve the older client's workspace while withholding the optional Data Feed page. */
+function omitDataFeedWorkspace(config) {
+    const next = JSON.parse(JSON.stringify(config));
+    const feedPoints = new Set((next.dataPoints || []).filter((p) => p.provider === 'data-feeds').map((p) => p.id));
+    const feedPages = new Set((next.pages || []).filter((p) => p.id === 'data-feed' || p.sections?.some((s) => s.components?.some((c) => c.type === 'data-feed-list'))).map((p) => p.id));
+    if (!feedPoints.size && !feedPages.size)
+        return next;
+    next.dataPoints = (next.dataPoints || []).filter((p) => !feedPoints.has(p.id));
+    next.pages = (next.pages || []).filter((p) => !feedPages.has(p.id));
+    if (next.navigation) {
+        next.navigation.modules = (next.navigation.modules || []).filter((m) => !feedPages.has(m.pageId) && m.id !== 'page:data-feed');
+        if (feedPages.has(String(next.navigation.defaultModule).replace(/^page:/, '')))
+            next.navigation.defaultModule = 'chat-sessions';
+    }
+    return next;
 }

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 'use strict';
+const { validatePersonalizationAsset } = require('./validate-personalization.cjs');
 
 /**
  * Validate the portable Persona bundle from a local clone.
@@ -19,6 +20,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { validateChatAppConfig } = require('./chat-app-model.cjs');
 
 const FORBIDDEN_DEFINITION_FIELDS = [
   'pageId',
@@ -76,9 +78,36 @@ function collectRefs({ value, key, found = [] }) {
   return found;
 }
 
-function auditLocalIds({ value, kind, issues, pathLabel = '$' }) {
+/** Mirrors the server validator: only a visible native stage view consumes its pipeline. */
+function renderedStageListRefs(persona) {
+  const app = persona.publishedConfig?.chatApp;
+  if (!app || validateChatAppConfig(app).length || !app.enabled) return [];
+  const refs = [];
+  const seen = new Set();
+  for (const page of app.pages || []) {
+    if (!app.navigation.modules.some(module => module.enabled && module.id === `page:${page.id}`)) continue;
+    for (const section of page.sections) {
+      if (page.tabs?.length && !page.tabs.some(tab => tab.sectionIds.includes(section.id))) continue;
+      for (const component of section.components) {
+        if (section.tabs?.length && !section.tabs.some(tab => tab.componentIds.includes(component.id))) continue;
+        if (!['table', 'inventory-list'].includes(component.type) || !component.columns?.some(column => column.field === '$stage')) continue;
+        const point = app.dataPoints?.find(candidate => candidate.id === component.dataPoint);
+        if (point?.source !== 'list' || point.operation !== 'rows' || !point.select?.includes('$stage') || seen.has(point.id)) continue;
+        seen.add(point.id);
+        refs.push({ value: point.listRef, path: `persona.publishedConfig.chatApp.dataPoints.${point.id}.listRef` });
+      }
+    }
+  }
+  return refs;
+}
+
+function auditLocalIds({ value, kind, issues, pathLabel = '$', actionIds = new Set() }) {
+  if(pathLabel==='$') {
+    const app=value?.publishedConfig?.chatApp||value?.chatApp;
+    actionIds=new Set((Array.isArray(app?.actions)?app.actions:[]).filter(a=>a.kind==='command').map(a=>a.id));
+  }
   if (Array.isArray(value)) {
-    value.forEach((child, index) => auditLocalIds({ value: child, kind, issues, pathLabel: `${pathLabel}[${index}]` }));
+    value.forEach((child, index) => auditLocalIds({ value: child, kind, issues, pathLabel: `${pathLabel}[${index}]`, actionIds }));
     return;
   }
   if (!value || typeof value !== 'object') return;
@@ -87,13 +116,15 @@ function auditLocalIds({ value, kind, issues, pathLabel = '$' }) {
       && /(?:^|\.)chatApp\.navigation\.modules\[\d+\]$/.test(pathLabel)
       && value.kind === 'page' && value.id === `page:${child}`
       && typeof child === 'string' && /^[a-z][a-z0-9-]{0,63}$/.test(child);
-    if (FORBIDDEN_DEFINITION_FIELDS.includes(key) && !appPageRef) {
+    const presetActionRef=key==='actionId'&&/(?:^|\.)chatApp\.dataPoints\[\d+\]\.signalPresets\[\d+\]$/.test(pathLabel)
+      &&typeof child==='string'&&/^[a-z][a-z0-9-]{0,63}$/.test(child)&&actionIds.has(child);
+    if (FORBIDDEN_DEFINITION_FIELDS.includes(key) && !appPageRef && !presetActionRef) {
       issues.push(`${kind}: ${pathLabel}.${key} is environment-local and cannot be in a portable definition.`);
     }
     if (key === 'id' && /(?:^|\.)outputIntegration\.dataLists\[\d+\]$/.test(pathLabel)) {
       issues.push(`${kind}: ${pathLabel}.${key} requires a verified portable list reference.`);
     }
-    auditLocalIds({ value: child, kind, issues, pathLabel: `${pathLabel}.${key}` });
+    auditLocalIds({ value: child, kind, issues, pathLabel: `${pathLabel}.${key}`, actionIds });
   }
 }
 
@@ -145,15 +176,17 @@ function validatePortableBundle({ repoRoot, registry: candidateRegistry }) {
   if (persona.schemaVersion !== 2 || !persona.resourceKey) {
     issues.push('assets/chat-config.json must be schema v2 with a resourceKey.');
   }
+  issues.push(...validatePersonalizationAsset(persona.publishedConfig?.personalization, { repoRoot, registry, persona }));
   auditLocalIds({ value: persona, kind: 'persona', issues });
 
-  // One workflow per distinct workflowRef, one Pipeline, and one or more domain Lists.
+  // One workflow per distinct workflowRef, one or more Pipelines, and one or
+  // more domain Lists.
   const portableRepos = registry.repos.filter((entry) => (
     entry && (entry.kind === 'workflow' || entry.kind === 'pipeline' || entry.kind === 'list')
   ));
   const workflowEntries = [];
+  const pipelineEntries = [];
   const listEntries = [];
-  const byKind = {};
   for (const entry of portableRepos) {
     if (!entry || !entry.kind) continue;
     if (entry.kind === 'workflow') {
@@ -164,23 +197,22 @@ function validatePortableBundle({ repoRoot, registry: candidateRegistry }) {
       listEntries.push(entry);
       continue;
     }
-    if (byKind[entry.kind]) {
-      issues.push(`references/registry.json has more than one ${entry.kind} entry.`);
+    if (entry.kind === 'pipeline') {
+      pipelineEntries.push(entry);
       continue;
     }
-    byKind[entry.kind] = entry;
   }
   if (workflowEntries.length === 0) {
     issues.push('references/registry.json is missing its workflow dependency.');
   }
-  if (!byKind.pipeline) issues.push('references/registry.json is missing its pipeline dependency.');
+  if (pipelineEntries.length === 0) issues.push('references/registry.json is missing its pipeline dependency.');
   if (listEntries.length === 0) issues.push('references/registry.json is missing its list dependency.');
-  if (portableRepos.length !== workflowEntries.length + listEntries.length + 1) {
+  if (portableRepos.length !== workflowEntries.length + pipelineEntries.length + listEntries.length) {
     issues.push(
-      `references/registry.json must contain exactly one Pipeline, every List, and one Workflow per distinct workflowRef — expected ${workflowEntries.length + listEntries.length + 1}, found ${portableRepos.length}.`,
+      `references/registry.json must contain every Pipeline, every List, and one Workflow per distinct workflowRef — expected ${workflowEntries.length + pipelineEntries.length + listEntries.length}, found ${portableRepos.length}.`,
     );
   }
-  if (workflowEntries.length === 0 || !byKind.pipeline || listEntries.length === 0) return issues;
+  if (workflowEntries.length === 0 || pipelineEntries.length === 0 || listEntries.length === 0) return issues;
 
   // Each definition must exist at its declared path, carry a matching portable header, hold
   // no environment-local ids, and match the fingerprint the manifest pinned for it.
@@ -205,10 +237,10 @@ function validatePortableBundle({ repoRoot, registry: candidateRegistry }) {
   };
   const workflowDefinitions = workflowEntries.map((entry) => readDefinition({ kind: 'workflow', entry }));
   const definitions = {
-    pipeline: readDefinition({ kind: 'pipeline', entry: byKind.pipeline }),
+    pipelines: pipelineEntries.map((entry) => readDefinition({ kind: 'pipeline', entry })),
     lists: listEntries.map((entry) => readDefinition({ kind: 'list', entry })),
   };
-  if (workflowDefinitions.some((definition) => !definition) || !definitions.pipeline || definitions.lists.some((definition) => !definition)) {
+  if (workflowDefinitions.some((definition) => !definition) || definitions.pipelines.some((definition) => !definition) || definitions.lists.some((definition) => !definition)) {
     return issues;
   }
 
@@ -227,48 +259,76 @@ function validatePortableBundle({ repoRoot, registry: candidateRegistry }) {
       issues.push(`persona: no slash command references workflow ${key}.`);
     }
   }
-  // Not every command drives the Pipeline — a tool or sandbox-skill command
-  // legitimately has none — so the requirement is connectivity: at least one
-  // workflow reaches it, and any workflow that names one names the shared one.
-  let pipelineReferenced = false;
+  const pipelineKeys = pipelineEntries.map((entry) => entry.resourceKey);
+  const referencedPipelineKeys = new Set();
   workflowDefinitions.forEach((definition, index) => {
     const refs = collectRefs({ value: definition, key: 'pipelineRef' });
     if (refs.length === 0) return;
-    pipelineReferenced = true;
-    checkRef({
+    const matched = checkRef({
       owner: `workflow:${workflowKeys[index]}`,
       refs,
       refKey: 'pipelineRef',
       expectedKind: 'pipeline',
-      expectedKeys: [byKind.pipeline.resourceKey],
+      expectedKeys: pipelineKeys,
       issues,
     });
+    matched.forEach((key) => referencedPipelineKeys.add(key));
   });
-  if (!pipelineReferenced) {
-    issues.push(`workflow: no workflow references pipeline ${byKind.pipeline.resourceKey}.`);
+  const personaPipelineRefs = [
+    ...collectRefs({ value: persona, key: 'privatePipelineRef' }),
+    ...collectRefs({ value: persona, key: 'pipelineRef' }),
+  ];
+  if (personaPipelineRefs.length) {
+    checkRef({
+      owner: 'persona',
+      refs: personaPipelineRefs,
+      refKey: 'privatePipelineRef',
+      expectedKind: 'pipeline',
+      expectedKeys: pipelineKeys,
+      issues,
+    }).forEach((key) => referencedPipelineKeys.add(key));
   }
-  checkRef({
-    owner: 'pipeline.storage',
-    refs: collectRefs({ value: definitions.pipeline.storage || {}, key: 'listRef' }),
-    refKey: 'listRef',
-    expectedKind: 'list',
-    expectedKeys: listEntries.map((entry) => entry.resourceKey),
-    issues,
+  const storagePipelineByList = new Map();
+  const validPipelineByList = new Map();
+  definitions.pipelines.forEach((definition, index) => {
+    const matched = checkRef({
+      owner: `pipeline:${pipelineKeys[index]}.storage`,
+      refs: collectRefs({ value: definition.storage || {}, key: 'listRef' }),
+      refKey: 'listRef',
+      expectedKind: 'list',
+      expectedKeys: listEntries.map((entry) => entry.resourceKey),
+      issues,
+    });
+    matched.forEach((listKey) => {
+      if (storagePipelineByList.has(listKey)) issues.push(`pipeline:${pipelineKeys[index]}: storage List ${listKey} is already claimed by ${storagePipelineByList.get(listKey)}.`);
+      else storagePipelineByList.set(listKey, pipelineKeys[index]);
+    });
   });
   definitions.lists.forEach((definition, index) => {
-    // Standalone domain collections need no pipeline. The pipeline's storage
-    // collection must still declare the reciprocal binding.
-    const storageListKey = definitions.pipeline.storage?.listRef?.resourceKey;
+    const storagePipelineKey = storagePipelineByList.get(listEntries[index].resourceKey);
     if (definition.list && definition.list.pipelineRef === undefined
-      && listEntries[index].resourceKey !== storageListKey) return;
-    checkRef({
+      && !storagePipelineKey) return;
+    const matched = checkRef({
       owner: `list:${listEntries[index].resourceKey}.list`,
       refs: collectRefs({ value: definition.list || {}, key: 'pipelineRef' }),
       refKey: 'pipelineRef',
       expectedKind: 'pipeline',
-      expectedKeys: [byKind.pipeline.resourceKey],
+      expectedKeys: storagePipelineKey ? [storagePipelineKey] : pipelineKeys,
       issues,
     });
+    if (matched.has(definition.list?.pipelineRef?.resourceKey)) {
+      validPipelineByList.set(listEntries[index].resourceKey, definition.list.pipelineRef.resourceKey);
+    }
+  });
+  for (const { value, path: owner } of renderedStageListRefs(persona)) {
+    const matched = checkRef({ owner, refs: [value], refKey: 'listRef', expectedKind: 'list', expectedKeys: listEntries.map(entry => entry.resourceKey), issues });
+    matched.forEach(key => {
+      const pipelineKey = validPipelineByList.get(key);
+      if (pipelineKey) referencedPipelineKeys.add(pipelineKey);
+    });
+  }
+  pipelineKeys.forEach(key => {
+    if (!referencedPipelineKeys.has(key)) issues.push(`pipeline: no workflow, profile mode, or rendered ChatApp stage view references ${key}.`);
   });
 
   return issues;

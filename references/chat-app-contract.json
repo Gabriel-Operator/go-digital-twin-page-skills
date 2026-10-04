@@ -82,6 +82,12 @@
     "record-cards",
     "nutrition-summary",
     "execution-status",
+    "playbook-list",
+    "routine-list",
+    "signal-list",
+    "data-feed-list",
+    "schedule-calendar",
+    "goal-list",
     "meal-plan",
     "stat-card",
     "table",
@@ -142,11 +148,20 @@
       "recipes",
       "nutrition",
       "meal-plan",
-      "executions"
+      "executions",
+      "routines",
+      "automations",
+      "goals",
+      "coach",
+      "data-feeds"
     ],
     "executionViews": [
       "workflows",
-      "executions"
+      "executions",
+      "playbooks",
+      "signals",
+      "schedule",
+      "legacy"
     ],
     "actions": [
       "chat",
@@ -157,17 +172,49 @@
       "cart.remove",
       "cart.quantity",
       "cart.review",
-      "meal-plan.save"
+      "meal-plan.save",
+      "routine.create",
+      "routine.update",
+      "routine.run",
+      "routine.pause",
+      "routine.delete",
+      "automation.create",
+      "automation.update",
+      "automation.run",
+      "automation.pause",
+      "automation.delete",
+      "automation.test"
     ],
     "recipeCapture": {
       "workflowRef": "declared workflow",
       "outputKey": "committed structured output"
     },
-    "previewMutations": false
+    "previewMutations": false,
+    "signalPresets": {
+      "location": "workspace data point with provider automations",
+      "fields": [
+        "id",
+        "title",
+        "description",
+        "sourceListRef",
+        "actionId"
+      ],
+      "state": "disabled draft until the runner configures and saves it",
+      "maximum": 50
+    }
   },
   "experience": {
     "schemaVersion": 1,
     "independentOfChatAppSchemaVersion": true,
+    "sessionMode": {
+      "values": [
+        "stepper",
+        "chat"
+      ],
+      "newPersonaDefault": "stepper",
+      "stepper": "restore the server-owned guided snapshot for every new, active, resumed, edited, and completed authenticated chat session",
+      "chat": "legacy empty-session start screen followed by the normal transcript"
+    },
     "hosts": [
       "authenticated-full-chat",
       "native-persona-app"
