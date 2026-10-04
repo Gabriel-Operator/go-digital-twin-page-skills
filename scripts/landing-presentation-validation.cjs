@@ -36,7 +36,8 @@ var chakri_scrap_copy_schema_default = {
     "controls",
     "plans",
     "faqs",
-    "global"
+    "global",
+    "business"
   ],
   labels: [
     "home",
@@ -257,6 +258,289 @@ var chakri_scrap_copy_schema_default = {
         "answer"
       ]
     }
+  },
+  business: {
+    roots: [
+      "labels",
+      "sections",
+      "materials",
+      "controls",
+      "plans",
+      "faqs",
+      "demo",
+      "defaultSelected"
+    ],
+    labels: [
+      "tab",
+      "heroKicker",
+      "heroTitle",
+      "heroBody",
+      "heroAction",
+      "sampleAction",
+      "heroTrust",
+      "talk",
+      "chatOpening",
+      "chatCaption",
+      "sampleNotice",
+      "globalNotice",
+      "marketNotice",
+      "inventory",
+      "lotNotice",
+      "selected",
+      "quantity",
+      "kg",
+      "unit",
+      "grade",
+      "dry",
+      "mixed",
+      "wet",
+      "uncertain",
+      "contamination",
+      "clean",
+      "lowContamination",
+      "highContamination",
+      "location",
+      "locationDefault",
+      "available",
+      "storage",
+      "covered",
+      "outdoor",
+      "pickupLimit",
+      "oneDay",
+      "threeDays",
+      "fiveDays",
+      "analyse",
+      "analysing",
+      "reset",
+      "empty",
+      "analysisTitle",
+      "valueRange",
+      "eligibility",
+      "reviewNeeded",
+      "feasible",
+      "waiting",
+      "selectLot",
+      "buyer",
+      "processor",
+      "recycler",
+      "mill",
+      "metalProcessor",
+      "metalRecycler",
+      "industrial",
+      "authorised",
+      "rate",
+      "minimum",
+      "transport",
+      "included",
+      "pickup",
+      "days",
+      "distance",
+      "requirements",
+      "flexibleGrade",
+      "mixedGrade",
+      "sortedGrade",
+      "deductions",
+      "fees",
+      "net",
+      "ineligible",
+      "issueMinimum",
+      "issueGrade",
+      "issueContamination",
+      "issueTiming",
+      "issueRegulated",
+      "issueQuantity",
+      "recommended",
+      "recommendation",
+      "noBuyer",
+      "noRisk",
+      "choose",
+      "chosen",
+      "approveSale",
+      "holdSale",
+      "held",
+      "approved",
+      "locked",
+      "formula",
+      "routeNotice",
+      "photo",
+      "sheet",
+      "voice",
+      "measured",
+      "intakeNotice",
+      "intakeExample",
+      "collectedBy",
+      "matching",
+      "buyerOptions",
+      "awaitingApproval",
+      "booked",
+      "assigned",
+      "collectedStatus",
+      "delivered",
+      "verified",
+      "settlementReady",
+      "paid",
+      "destination",
+      "vehicle",
+      "vehicleValue",
+      "pickupWindow",
+      "contact",
+      "contactValue",
+      "reference",
+      "dispatch",
+      "assignDriver",
+      "collectLoad",
+      "deliverLoad",
+      "transportNotice",
+      "declared",
+      "collected",
+      "accepted",
+      "difference",
+      "threshold",
+      "reason",
+      "moistureReason",
+      "sortingReason",
+      "unknownReason",
+      "discrepancy",
+      "withinThreshold",
+      "invalidWeights",
+      "verifyWeights",
+      "reviewWeights",
+      "weightNotice",
+      "finalRate",
+      "gross",
+      "adjustments",
+      "netProceeds",
+      "transaction",
+      "paymentStatus",
+      "estimated",
+      "offerAccepted",
+      "received",
+      "prepareSettlement",
+      "approveSettlement",
+      "settlementNotice",
+      "settledNotice",
+      "receipt",
+      "inventoryRemaining",
+      "tonnes",
+      "loads",
+      "avgPrice",
+      "buyerMinutes",
+      "transportCost",
+      "awaitingSale",
+      "enquiries",
+      "hours",
+      "transportPotential",
+      "resaleTime",
+      "materialValue",
+      "valueNotice",
+      "homeLoop",
+      "businessLoop",
+      "household",
+      "collector",
+      "downstream",
+      "production",
+      "returnLoop",
+      "closingTitle",
+      "closingBody",
+      "trySample",
+      "bookPilot",
+      "pricing",
+      "navTry",
+      "navOffers",
+      "navTransport",
+      "navValue",
+      "navFaq",
+      "approvalLoop",
+      "statusLabel",
+      "tonnesUnit",
+      "timestamp",
+      "buyerCount",
+      "suitableCount",
+      "rateUnit",
+      "noSale",
+      "settled",
+      "tomorrow",
+      "clearRecord",
+      "routePaper",
+      "routeCopper",
+      "routeIron",
+      "routeElectronics",
+      "routeReusable",
+      "reusable",
+      "electronics",
+      "paper",
+      "loadRecord",
+      "availableNow",
+      "regulatedNotice",
+      "newBuyer",
+      "outgoing",
+      "sampleCollector",
+      "preview",
+      "reviewPending",
+      "thresholdUnit",
+      "noOffersForMaterial",
+      "scaleNote"
+    ],
+    sections: [
+      "demo",
+      "intake",
+      "routes",
+      "offers",
+      "transport",
+      "verify",
+      "settlement",
+      "value",
+      "controls",
+      "loop",
+      "plans",
+      "faq"
+    ],
+    sectionFields: [
+      "kicker",
+      "title",
+      "body"
+    ],
+    materials: [
+      "cardboard",
+      "iron",
+      "aluminium",
+      "copper",
+      "ac_unit"
+    ],
+    materialFields: [
+      "name",
+      "condition",
+      "route"
+    ],
+    arrays: {
+      controls: {
+        count: 4,
+        fields: [
+          "title",
+          "body"
+        ]
+      },
+      plans: {
+        count: 3,
+        fields: [
+          "title",
+          "body",
+          "cta",
+          "tag"
+        ]
+      },
+      faqs: {
+        count: 5,
+        fields: [
+          "question",
+          "answer"
+        ]
+      }
+    },
+    demoFields: [
+      "weightReviewThresholdPercent",
+      "maxPickupDays"
+    ]
   }
 };
 
@@ -292,6 +576,38 @@ function validateChakriLandingContent(content) {
       const path = `${base}.${key}[${index}]`;
       if (record(value, path, contract.fields)) for (const field of contract.fields) text(value[field], `${path}.${field}`);
     });
+  }
+  if (content.business !== void 0) {
+    const business = content.business;
+    const path = `${base}.business`;
+    const contract = chakri_scrap_copy_schema_default.business;
+    if (record(business, path, contract.roots)) {
+      if (business.defaultSelected !== void 0 && typeof business.defaultSelected !== "boolean") issues.push({ path: `${path}.defaultSelected`, message: "Choose whether this audience defaults to Business." });
+      if (record(business.labels, `${path}.labels`, contract.labels)) for (const key of contract.labels) text(business.labels[key], `${path}.labels.${key}`);
+      for (const [group, keys, fields] of [["sections", contract.sections, contract.sectionFields], ["materials", contract.materials, contract.materialFields]]) {
+        const values = business[group];
+        if (record(values, `${path}.${group}`, [...keys])) for (const key of keys) {
+          const value = values[key];
+          if (record(value, `${path}.${group}.${key}`, [...fields])) for (const field of fields) text(value[field], `${path}.${group}.${key}.${field}`);
+        }
+      }
+      for (const [key, entry] of Object.entries(contract.arrays)) {
+        const values = business[key];
+        if (!Array.isArray(values) || values.length !== entry.count) {
+          issues.push({ path: `${path}.${key}`, message: `Provide exactly ${entry.count} entries.` });
+          continue;
+        }
+        values.forEach((value, index) => {
+          const p = `${path}.${key}[${index}]`;
+          if (record(value, p, entry.fields)) for (const field of entry.fields) text(value[field], `${p}.${field}`);
+        });
+      }
+      if (record(business.demo, `${path}.demo`, contract.demoFields)) {
+        const threshold = business.demo.weightReviewThresholdPercent;
+        if (typeof threshold !== "number" || !Number.isFinite(threshold) || threshold < 0 || threshold > 100) issues.push({ path: `${path}.demo.weightReviewThresholdPercent`, message: "Provide a review threshold from 0 to 100 percent." });
+        if (![1, 3, 5].includes(business.demo.maxPickupDays)) issues.push({ path: `${path}.demo.maxPickupDays`, message: "Choose a sample pickup window of 1, 3 or 5 days." });
+      }
+    }
   }
   return issues;
 }
