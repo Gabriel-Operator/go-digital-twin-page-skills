@@ -106,6 +106,18 @@
                 "showThemeToggle": {},
                 "about": {}
               }
+            },
+            "copyOverrides": {
+              "type": "object",
+              "maxProperties": 250,
+              "propertyNames": {
+                "pattern": "^(landingPage|chatApp|chatEmbedConfig)\\.[a-zA-Z0-9_.-]+$"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4000
+              }
             }
           }
         },
@@ -164,6 +176,18 @@
                   "showThemeToggle": {},
                   "about": {}
                 }
+              },
+              "copyOverrides": {
+                "type": "object",
+                "maxProperties": 250,
+                "propertyNames": {
+                  "pattern": "^(landingPage|chatApp|chatEmbedConfig)\\.[a-zA-Z0-9_.-]+$"
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                }
               }
             }
           }
@@ -211,7 +235,7 @@
     },
     "variants": {
       "type": "array",
-      "maxItems": 100,
+      "maxItems": 300,
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -456,6 +480,18 @@
                   "showThemeToggle": {},
                   "about": {}
                 }
+              },
+              "copyOverrides": {
+                "type": "object",
+                "maxProperties": 250,
+                "propertyNames": {
+                  "pattern": "^(landingPage|chatApp|chatEmbedConfig)\\.[a-zA-Z0-9_.-]+$"
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                }
               }
             }
           },
@@ -513,6 +549,18 @@
                     "themeMode": {},
                     "showThemeToggle": {},
                     "about": {}
+                  }
+                },
+                "copyOverrides": {
+                  "type": "object",
+                  "maxProperties": 250,
+                  "propertyNames": {
+                    "pattern": "^(landingPage|chatApp|chatEmbedConfig)\\.[a-zA-Z0-9_.-]+$"
+                  },
+                  "additionalProperties": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000
                   }
                 }
               }

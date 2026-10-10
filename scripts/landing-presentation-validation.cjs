@@ -541,7 +541,14 @@ var chakri_scrap_copy_schema_default = {
       "weightReviewThresholdPercent",
       "maxPickupDays"
     ]
-  }
+  },
+  optionalMarkets: [
+    "AU",
+    "DE",
+    "CA",
+    "SG",
+    "JP"
+  ]
 };
 
 // server/src/services/chakri-landing-validation.ts
@@ -561,7 +568,8 @@ function validateChakriLandingContent(content) {
   };
   if (!record(content, base, chakri_scrap_copy_schema_default.roots)) return issues;
   if (record(content.labels, `${base}.labels`, chakri_scrap_copy_schema_default.labels)) for (const key of chakri_scrap_copy_schema_default.labels) text(content.labels[key], `${base}.labels.${key}`);
-  if (record(content.markets, `${base}.markets`, chakri_scrap_copy_schema_default.markets)) for (const code of chakri_scrap_copy_schema_default.markets) {
+  const marketCodes = [...chakri_scrap_copy_schema_default.markets, ...chakri_scrap_copy_schema_default.optionalMarkets];
+  if (record(content.markets, `${base}.markets`, marketCodes)) for (const code of marketCodes.filter((code2) => chakri_scrap_copy_schema_default.markets.includes(code2) || Object.prototype.hasOwnProperty.call(content.markets, code2))) {
     const market = content.markets[code];
     if (record(market, `${base}.markets.${code}`, chakri_scrap_copy_schema_default.marketFields)) for (const key of chakri_scrap_copy_schema_default.marketFields) text(market[key], `${base}.markets.${code}.${key}`);
   }
@@ -2742,7 +2750,7 @@ var HOME_INTRODUCTION_TARGETS = /* @__PURE__ */ new Set(["top", "audience", "pri
 var LOGISTICS_PORTAL_TARGETS = /* @__PURE__ */ new Set(["top", "edge", "control", "workflows", "pilot", "simulation", "roi-calculator"]);
 var CINEMATIC_CAMPAIGN_TARGETS = /* @__PURE__ */ new Set(["workflow", "delivery", "showcase", "features", "tracker", "meet-archer", "fit", "pilot", "hero-intake", "contact", "roi-calculator"]);
 var RECRUITING_OPERATIONS_TARGETS = /* @__PURE__ */ new Set(["workflow", "use-cases", "why-lina", "faq", "roi-calculator"]);
-var DESIGN_VARIANTS = /* @__PURE__ */ new Set(["default", "signature", "banking", "form-operations", "logistics-portal", "cinematic-campaigns", "recruiting-operations", "grocery-twin", "wardrobe-twin", "boli-learning", "event-introductions", "home-introductions", "chakri-scrap"]);
+var DESIGN_VARIANTS = /* @__PURE__ */ new Set(["default", "signature", "banking", "form-operations", "logistics-portal", "cinematic-campaigns", "recruiting-operations", "grocery-twin", "wardrobe-twin", "boli-learning", "event-introductions", "home-introductions", "chakri-scrap", "klok"]);
 var THEME_PALETTES = /* @__PURE__ */ new Set(["coral", "ocean", "forest", "purple", "slate", "research", "maroon", "stone", "emerald", "custom"]);
 var THEME_COLORS = /* @__PURE__ */ new Set(["purple", "indigo", "blue", "green", "orange", "pink", "red", "teal", "gray", "slate", "maroon", "stone", "emerald"]);
 var THEME_MODES = /* @__PURE__ */ new Set(["light", "dark"]);

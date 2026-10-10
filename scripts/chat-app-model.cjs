@@ -3,6 +3,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CHAT_APP_ASSET_TABS = exports.CHAT_APP_MODULE_IDS = exports.stableChatAppJson = exports.isChatAppPageView = exports.CHAT_APP_EXPERIENCE_RESULT_SOURCES = exports.CHAT_APP_EXPERIENCE_RESULT_TEMPLATES = exports.CHAT_APP_EXPERIENCE_ACTION_KINDS = exports.CHAT_APP_EXPERIENCE_START_TEMPLATES = exports.CHAT_APP_ACTION_KINDS = exports.CHAT_APP_COMPONENT_PROVIDERS = exports.CHAT_APP_WORKSPACE_PROVIDERS = exports.CHAT_APP_OUTCOME_RESULTS = exports.CHAT_APP_COMPONENT_TYPES = void 0;
 exports.validateWorkspaceFieldMappings = validateWorkspaceFieldMappings;
+exports.validateSignalPresetConfiguration = validateSignalPresetConfiguration;
 exports.chatAppExperienceText = chatAppExperienceText;
 exports.chatAppText = chatAppText;
 exports.migrateChatAppDashboards = migrateChatAppDashboards;
@@ -64,6 +65,16 @@ exports.CHAT_APP_WORKSPACE_PROVIDERS = ["chat", "coach", "cart", "catalog", "rec
 /** Which workspace provider(s) each workspace-backed component type accepts. Shared by the validator and the forward-compatibility sanitizer below. */
 exports.CHAT_APP_COMPONENT_PROVIDERS = { "assistant-panel": ["chat", "coach"], "cart-items": ["cart"], "record-cards": ["catalog", "recipes"], "nutrition-summary": ["nutrition"], "execution-status": ["executions"], "playbook-list": ["executions"], "routine-list": ["routines"], "signal-list": ["automations"], "data-feed-list": ["data-feeds"], "schedule-calendar": ["automations"], "goal-list": ["goals"], "meal-plan": ["meal-plan"] };
 exports.CHAT_APP_ACTION_KINDS = ["chat", "voice", "upload", "command", "cart.add", "cart.remove", "cart.quantity", "cart.review", "meal-plan.save", "routine.create", "routine.update", "routine.run", "routine.pause", "routine.delete", "automation.create", "automation.update", "automation.run", "automation.pause", "automation.delete", "automation.test"];
+function validateSignalPresetConfiguration(v) {
+    const c = v;
+    return !!c && typeof c === 'object' && Object.keys(c).every(k => ['events', 'watchedFields', 'evaluationScope', 'cadence', 'condition', 'refreshSteps', 'actionSteps', 'ontology'].includes(k))
+        && Array.isArray(c.events) && c.events.length > 0 && c.events.every(e => ['create', 'update', 'delete'].includes(e))
+        && Array.isArray(c.watchedFields) && c.watchedFields.length <= 100 && c.watchedFields.every(f => typeof f === 'string' && /^[a-zA-Z_][a-zA-Z0-9_.-]*$/.test(f))
+        && ['record', 'filtered_count'].includes(c.evaluationScope) && (!c.cadence || Number.isFinite(c.cadence.intervalMinutes) && c.cadence.intervalMinutes >= 1)
+        && !!c.condition && ['and', 'or'].includes(c.condition.combinator) && Array.isArray(c.condition.clauses) && c.condition.clauses.length <= 50
+        && c.condition.clauses.every(q => q && typeof q.id === 'string' && typeof q.field === 'string' && /^[a-zA-Z_][a-zA-Z0-9_.-]*$/.test(q.field) && ['eq', 'neq', 'exists', 'changed', 'gt', 'gte', 'lt', 'lte', 'contains'].includes(q.op) && (q.value == null || ['string', 'number', 'boolean'].includes(typeof q.value)))
+        && [c.refreshSteps, c.actionSteps].every(steps => Array.isArray(steps) && steps.length <= 20 && steps.every(s => s && typeof s.id === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(s.commandRef) && ['saved', 'request_at_run'].includes(s.inputMode) && typeof s.approvalAfter === 'boolean'));
+}
 exports.CHAT_APP_EXPERIENCE_START_TEMPLATES = [
     "guided-upload",
     "guided-intake",
@@ -918,7 +929,7 @@ function validateDashboardDefinitions(app, issues) {
                             issue(presetAt, "Invalid signal preset.");
                             continue;
                         }
-                        rejectUnknownKeys(issues, preset, ["id", "title", "description", "sourceListRef", "actionId"], presetAt);
+                        rejectUnknownKeys(issues, preset, ["id", "title", "description", "sourceListRef", "actionId", "configuration"], presetAt);
                         if (!slug(preset.id) || presetIds.has(String(preset.id)))
                             issue(`${presetAt}.id`, "Use a unique signal preset id.");
                         presetIds.add(String(preset.id));
@@ -930,6 +941,8 @@ function validateDashboardDefinitions(app, issues) {
                             issue(`${presetAt}.sourceListRef`, "Use a portable list reference.");
                         if (isRecord(preset.sourceListRef))
                             rejectUnknownKeys(issues, preset.sourceListRef, ["kind", "resourceKey"], `${presetAt}.sourceListRef`);
+                        if (preset.configuration !== undefined && !validateSignalPresetConfiguration(preset.configuration))
+                            issue(`${presetAt}.configuration`, "Use a valid complete signal configuration.");
                         if (preset.actionId !== undefined && !slug(preset.actionId))
                             issue(`${presetAt}.actionId`, "Use a declared command action id.");
                     }
@@ -1370,6 +1383,10 @@ function validateWorkspaceDefinitions(app, issues) {
         for (const preset of point.signalPresets || []) {
             if (preset.actionId !== undefined && !actions.some((action) => isRecord(action) && action.id === preset.actionId && action.kind === "command")) {
                 issue(`dataPoints.${point.id}.signalPresets.${preset.id}.actionId`, "Select a declared command action.");
+            }
+            for (const step of [...(preset.configuration?.refreshSteps || []), ...(preset.configuration?.actionSteps || [])]) {
+                if (!actions.some(action => action.id === step.commandRef && action.kind === 'command'))
+                    issue(`dataPoints.${point.id}.signalPresets.${preset.id}.configuration`, 'Select declared command actions for signal reactions.');
             }
         }
     }

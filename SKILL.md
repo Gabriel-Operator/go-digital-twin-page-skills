@@ -5,6 +5,10 @@ description: Maintain git-backed AI Persona state and release quality via assets
 
 # AI Persona Skill
 
+## AgentCard policy
+
+Author global `publishedConfig.agentCardPolicy` in the Identity section: `enabled`, `cardSource` (`runner` or `author`), `requireHumanApproval: true`, and `restrictions`. Opt in each purchase slash command with `agentCard: { enabled: true, restrictions: {} }`. Restrictions support `maxAmountMinor`, `currencies`, `allowedMerchants`, `deniedMerchants`, and `allowRecurring` (default false). Command/runner rules only narrow the global policy. Card attachment and encrypted credentials live in runtime bindings, never this repository. Every purchase must use the workflow-builder `agent_card` node and mandatory human approval.
+
 ## Offline-first contract
 
 Read [the embedded runtime contract](references/offline-runtime-v1.md). Portable Persona Git assets remain definitions only. Offline preparation may copy authorized definitions and knowledge into encrypted device storage, while chat, records, runs, checkpoints, conflicts, device preferences, and secrets remain runtime state. Validate nested playbook dependencies and publish their capability report with the prepared pack.
@@ -89,7 +93,7 @@ An update uses optimistic `expectedHeadSha`, modifies only `assets/persona-evals
 For legacy v1 personas, Quality control is opt-in through `publishedConfig.qualityControlConfig.enabled === true`. Missing or false means the seventh **Quality** tab, the owner-only live/mobile Quality views, and release gating remain disabled; this preserves legacy Persona behavior. Enable it from the create/edit Persona **Features** tab. Subscriber testing is a separate nested opt-in: `subscriberSimulationEnabled` is effective only when the parent is enabled, defaults to false, and must be written back as false when Quality is disabled. When both are enabled, every subscriber-facing command needs a required mock subscriber case and **Subscriber experience** becomes a release dimension. Owners also receive `Viewing as: Author | Subscriber simulation` in the Persona header. The preview uses a one-time, owner/page/candidate-bound session and never creates an impersonation login. Plain-text free exploration uses the exact candidate prompt/model in a tool-free subscriber lane; configured Operator and Canvas commands use fresh isolated list/pipeline copies, declared fixtures, and the production executor. Free exploration is mock-only and never satisfies readiness. Gateway tools may run `runAs: subscriber` cases but never accept actor ids or create browser previews. The Quality overview separates the persona benchmark from its skills. Each detail screen contains Tests, Definition of Ready, Definition of Done and History. V2 release enforcement survives disabling the display toggle. The same owner-only tab appears in the live Persona experience and links each case to Canvas. Visitors never see eval controls or data. Mobile owners can inspect actor-labelled readiness/history, run or cancel suites, and open Canvas; v1 mobile does not author the specification or interactively impersonate. Inventory-generated requirement prompts are drafts until the owner confirms them.
 
 ## Goal
-The parent Persona also owns one optional `assets/ontology.json`, independent of country/language variants and child repositories. Use the `persona-ontology` skill to define stable entity, attribute, and relationship identifiers or validate Data Feed references. Ontologies hold definitions only; existing Lists/JSON/Mongo and state-machine mutations remain unchanged. Legacy personas may omit the file.
+The parent Persona also owns one optional `assets/ontology.json`, with optional context-selected models and terminology, independent of child repositories. Use the `persona-ontology` skill to define stable entity, attribute, and relationship identifiers or validate Data Feed references. Ontologies hold definitions only; existing Lists/JSON/Mongo and state-machine mutations remain unchanged. Legacy personas may omit the file.
 
 Maintain one AI Persona configuration per repository. The `assets/chat-config.json` file is the source of truth for the page's **display profile** (`pageProfile`: title, description, avatar, banners, tags, taxonomy) and **published AI runtime** (`publishedConfig`: assistant name, prompts, voice, connectors, tools, etc.) when a git repository is connected.
 
@@ -920,3 +924,50 @@ Prompts adapt editable copy through the existing country generation jobs and
 policies; complete layouts are authored validated config. Translations and
 generated assets live under their matched variant and cannot use a shared global
 translation cache. Preserve human approvals, real-data boundaries and access checks.
+
+## Persona integration support
+
+Published config supports `integrationBindings`, `mastraVoiceConfig`, and `liveVisionConfig`; input-understanding provider `mastra` uses a saved vision-model reference. Preserve these fields through save/publish/Git round trips. Load the `persona-integrations` topic for current schemas and capabilities. Never commit credentials.
+
+## Home dashboard composition
+
+Author signed-in applications through `chat-app-builder` and [the dashboard format](../chat-app-builder/references/dashboard-first.md). Keep the review coach on Home’s `coach` tab with a declared coach provider and `chatApp.coach.mode: review`, and keep only domain records/results/decisions in Home tabs. Playbooks is sidebar-only, milestones/goals uses the Coach control, and routines/Signals/Schedule belongs to Signals. Never show duplicate Home tabs or panels for these managers. Use the standard minimal sidebar rather than extra Coach/Goals/Connections/To-Dos/Canvas destinations. Preserve an explicitly requested alternative and existing runtime data. Mirror the canonical app exactly and verify Home’s nested conversation, history, New Run and Goals controls after publication.
+
+## Context-aware ontology
+
+Use the parent persona’s `assets/ontology.json` for Global → country/region → one authenticated audience → language → terminology. Refer to [the ontology authoring contract](references/ontology-context/contract.md) for snapshots, stable IDs, validation, preview and gateway/MCP authoring. Child resources reference that contract; stored instances and credentials remain in existing runtime storage. Preserve captured ontology selections during retries and downstream mappings. Saving an ontology candidate is separate from activation.
+
+## Evidence-backed ROI
+
+For a standard Persona app, include the domain ROI/Impact sidebar destination and connect it to the same landing calculator definitions via `publishedConfig.roiMonitoring`. Read [the ROI algorithm and evidence contract](../chat-app-builder/references/roi-evidence.md) or Gateway topic `persona-roi`: map committed output/List fields to the parent ontology, capture the semantic revision at execution, deduplicate stable identities, preserve acceptance/withdrawal boundaries and measure value with explicit runner baselines or evidenced economic rules. Credits/tokens/top-up funding are distinct; never sum them as one cost or call a budget/row count cash savings. Missing evidence/currency conversion keeps financial ROI unknown. Validate the model and real runner ROI before publication.
+
+Signals uses the shared panel’s inner Signals/Planning controls; never add or show a duplicate outer Signals/Routines tab strip. Scheduled and legacy routines remain in that panel’s existing controls. Meet/Coach tabs must prefix the label with the current persona portrait, even when an older model has a generic AI icon. Configure the actual persona avatar, not the author’s photo.
+
+ROI/Impact is sidebar-only. Use canonical `agents` (existing Kai `grocery-agents`) metadata as the standalone target; never display an ROI tab beside Meet/Coach.
+
+
+### Mobile map activities
+
+For an Amigos-style mobile community persona, use `peopleMatchingConfig.proximity.activitiesEnabled: true` only when the author requests activities. It defaults off and also requires enabled proximity/profile onboarding. Neighborhood and Schools retain separate active profiles. Activity school/mode/owner values always come from the authenticated active profile. Searches and all joins stay inside the saved geofence and same school; panning a map never widens discovery.
+
+Activities are runtime data in `community_activities`, not portable Git seeds. Use `GET/POST /api/gateway/pages/{pageId}/people-matching/activities` and `POST .../activities/{activityId}/{join|leave|cancel}`. Signed-in web/native routes use `/api/v1/pages/{pageId}/people-matching/...`; persona-key routes use `/api/v1/matches/activities`. MCP equivalents are `gabriel_list_nearby_activities`, `gabriel_create_community_activity`, `gabriel_set_activity_participation` and the same `persona_` names without pageId. The chat tool is `community_activities`.
+
+A creation includes title, description, venue, category (`sports|creative|outdoors|study|games|other`), ageGroup (`all_ages|under_6|6_10|11_15|16_plus|adults`), future startsAt with timezone, latitude/longitude, capacity (1–200), and `publicVenueConfirmed: true`. School creation/joining also requires `familyParticipationAcknowledged: true` from a parent or school group adult. Never infer this acknowledgement or invent activity rows. Parents manage family participation; do not collect children's names, contact details, private locations or attendance identities. Responses include aggregate participant count and only the current runner's joined/owned state. Joining is idempotent and capacity is checked atomically; only the host can cancel. These operations never send invitations.
+
+Configure Maps keys in the persona's Edit Persona or Publish App configuration and via maps-config author APIs/MCP, never deployment/build environment variables. Native packages read that saved encrypted persona configuration. Landing screens should show phone devices, location-centered maps, activity pins, filters, activity detail cards and a create action. Label fictional marketing activities as previews; keep functional hero chat and floating chat available.
+
+
+#### School workshop programmes
+
+For school-led workshops, `schoolCommunityRole` on the completed active profile must be `teacher` or `staff` to create a school activity. This role is self-reported during profile onboarding; a matching school domain does not verify affiliation. Parents and external providers can submit a custom school solution brief from the Schools landing palette. No automatic provider bookings or payouts occur. Teachers can combine bounded `groupLabels` (class/group labels only, no child names), set a `learningGoal`, venue, future date, age range and capacity. Categories include `ai_technology` and `music` as well as sports, creative, outdoors, study, games and other.
+
+A school join action creates a pending participation request rather than granting a place. Parents explicitly acknowledge managing family participation and choose a declared group label. Only the activity host can `approve` or `decline`, passing `requestId` through the same participation endpoint/tool. Approval enforces capacity atomically. The host alone receives pending adult requester display labels and group choices; other users receive aggregate counts and their own requested/joined status, never attendee identities or child profiles. School hosts do not consume a family place. Neighborhood joining remains direct.
+
+The Schools landing experience has a desktop workshop palette and programme preview plus a parent mobile companion, separate from the Neighborhood mobile map. Keep the real hero conversation mounted once across tab switches. Put character artwork inside the chat’s bottom-right corner, above the input, and show an AI mistakes disclaimer below the input. The school solution registration uses the established Boli pilot-request route and requires adult contact details only. Research-based funding copy must identify country, source and review date; check open rounds and eligibility, and do not promise subsidies, school profit or provider income.
+
+
+#### Family neighborhood activities
+
+Mirav Neighborhood is specifically for parents/guardians finding kids activities and socializing with other parents. Enable `proximity.familyActivitiesOnly: true` and include a `parentGuardianAcknowledged` boolean mapped to the participant row. Real nearby discovery and activity operations require it to be true; the shared participant pool also filters to acknowledged parents/guardians. Optional kids age groups are broad ranges only, never child names or profiles. This flag defaults off for other personas.
+
+One parent creates a family activity. An already joined parent may call participation action `offer_to_cohost`. Only the original organizer reviews the opaque requestId through `approve` or `decline`; co-hosting is never inferred. `withdraw_cohost` removes only the current runner’s offer/role and leaves participation intact. Leaving an activity also removes the runner’s co-host role. The public result exposes co-host count and only the runner’s own cohost/cohostRequested state; adult offer display labels are shown to the original organizer only. This feature sends no invitations or messages. The Neighborhood landing and mobile previews must consistently show kids playdates, parent connections and shared organizing, rather than a generic adult social app.

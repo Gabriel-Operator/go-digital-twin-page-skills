@@ -23,6 +23,17 @@ A complete landingPage/chatApp replaces its inherited object. Embed appearance
 merges shallowly. Missing identity fields inherit. Authored translations override
 that version's source fields for exact language, then base language.
 
+For country-specific wording without duplicating complete pages, use
+`content.copyOverrides` (and `translations.<lang>.copyOverrides`) as a map of
+existing human-facing string paths to replacement text. For example,
+`landingPage.homeIntroductions.tracks.0.leadScan.inputPlaceholder` can use a
+local city, currency and postal-area term, and `chatApp.experience.freshChat.body`
+can explain the same local context in signed-in chat. Runtime rejects missing
+paths, link replacements, design, command and resource fields. These overlays
+never change access, roles, providers, credentials or execution policies.
+The manifest supports up to 300 editions (including all ISO countries), within
+the existing one-megabyte total bound; each edition allows 250 bounded copy paths.
+
 `icp` and `custom` audiences require a verified account and saved
 `persona_user_profiles` answers. All rules match; each `oneOf` accepts strings,
 numbers or booleans without coercion (4 differs from "4"). Multi-select answers

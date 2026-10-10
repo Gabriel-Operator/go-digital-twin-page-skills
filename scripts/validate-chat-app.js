@@ -3,11 +3,13 @@ const fs = require('fs');
 const path = require('path');
 const { validateChatAppConfig, validateChatAppDependencies, stableChatAppJson } = require('./chat-app-model.cjs');
 const { validatePersonalizationAsset } = require('./validate-personalization.cjs');
-const file = process.argv[2] || 'assets/chat-app.json';
-const mirror = process.argv[3];
+const args = process.argv.slice(2).filter(arg => arg !== '--dashboard-first');
+const file = args[0] || 'assets/chat-app.json';
+const mirror = args[1];
 try {
   const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
   const issues = [];
+  if (process.argv.includes('--dashboard-first')) issues.push(...require('./dashboard-layout.cjs').validatePersonaDashboardLayout(doc.chatApp));
   for (const key of Object.keys(doc)) if (!['schemaVersion', 'resourceKey', 'runtimeDataPolicy', 'chatApp', 'commitMessage'].includes(key)) issues.push(`root.${key}: unknown field`);
   if (![1, 2, 3].includes(doc.schemaVersion)) issues.push('Unsupported schemaVersion');
   if (doc.runtimeDataPolicy !== 'definitions_only') issues.push('runtimeDataPolicy must be definitions_only');

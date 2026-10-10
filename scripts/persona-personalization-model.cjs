@@ -1,6 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createPersonaPersonalization = exports.matchesPresentationLanguage = exports.normalizePresentationLanguage = void 0;
+exports.isPresentationCopyPath = isPresentationCopyPath;
+exports.applyPresentationCopyOverrides = applyPresentationCopyOverrides;
 exports.validatePersonaPersonalization = validatePersonaPersonalization;
 exports.audienceMatches = audienceMatches;
 exports.selectPresentationLayers = selectPresentationLayers;
@@ -10,7 +12,37 @@ const idPattern = /^[a-z][a-z0-9-]{0,63}$/;
 const languagePattern = /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/;
 const unsafeKeys = new Set(['__proto__', 'constructor', 'prototype']);
 const embedKeys = new Set(['theme', 'fontFamily', 'googleFontFamily', 'headingColor', 'headingMonochrome', 'chatBackground', 'pageBackground', 'chatBackgroundBlur', 'chatBackgroundOverlayOpacity', 'pageBackgroundBlur', 'pageBackgroundOverlayOpacity', 'heroTitle', 'heroSubtitle', 'openingStatements', 'themeMode', 'showThemeToggle', 'about']);
-const contentKeys = new Set(['name', 'description', 'profilePicture', 'landingPage', 'chatEmbedConfig', 'chatApp']);
+const contentKeys = new Set(['name', 'description', 'profilePicture', 'landingPage', 'chatEmbedConfig', 'chatApp', 'copyOverrides']);
+const copyKeys = new Set(['headline', 'headlineAccent', 'headlineLine2', 'subheadline', 'badge', 'label', 'title', 'heading', 'headingLines', 'body', 'description', 'eyebrow', 'kicker', 'announcement', 'name', 'location', 'dateRange', 'placeholder', 'instruction', 'budgetHint', 'question', 'answer', 'value', 'tagline', 'disclaimer', 'proposalArea', 'forItems', 'notForItems', 'principles', 'openingStatements']);
+const copyBlockedSegments = new Set(['design', 'localization', 'capabilityPreview', 'schema', 'dataPoints', 'workspace', 'scope', 'generation', 'translations', 'credentials', '__proto__', 'constructor', 'prototype']);
+function isPresentationCopyPath(path) {
+    const parts = path.split('.');
+    if (!['landingPage', 'chatApp', 'chatEmbedConfig'].includes(parts[0]) || parts.length < 2 || parts.length > 20)
+        return false;
+    if (parts.some(part => !/^(?:[a-zA-Z][a-zA-Z0-9_-]*|0|[1-9][0-9]*)$/.test(part) || copyBlockedSegments.has(part)))
+        return false;
+    const leaf = [...parts].reverse().find(part => !/^\d+$/.test(part)) || '';
+    return copyKeys.has(leaf) || /(?:Label|Copy|Message|Placeholder|Text|Note|Intro|Heading|Summary|Disclaimer)$/.test(leaf);
+}
+/** Fail closed: copy overlays cannot create paths, change URLs or alter command/resource bindings. */
+function applyPresentationCopyOverrides(content, overrides) {
+    if (!overrides)
+        return content;
+    const result = structuredClone(content);
+    for (const [path, text] of Object.entries(overrides)) {
+        if (!isPresentationCopyPath(path) || typeof text !== 'string' || !text.trim() || text.length > 4000)
+            throw new Error('Invalid presentation copy override: ' + path);
+        const parts = path.split('.');
+        let parent = result;
+        for (const part of parts.slice(0, -1))
+            parent = parent?.[part];
+        const key = parts[parts.length - 1];
+        if (!parent || typeof parent[key] !== 'string' || /^(?:https?:\/\/|mailto:|tel:|\/|#)/i.test(parent[key]))
+            throw new Error('Presentation copy path is not an existing copy field: ' + path);
+        parent[key] = text;
+    }
+    return result;
+}
 const record = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
 const text = (v, max) => typeof v === 'string' && v.trim().length > 0 && v.length <= max;
 const scalar = (v) => typeof v === 'string' || typeof v === 'boolean' || typeof v === 'number' && Number.isFinite(v);
@@ -49,8 +81,8 @@ function validatePersonaPersonalization(value) {
     for (const key of ['sourceLanguage', 'defaultLanguage'])
         if (!languagePattern.test(String(value[key] || '')))
             add(key, 'Use a BCP-47 language tag.');
-    if (!Array.isArray(value.variants) || value.variants.length > 100)
-        add('variants', 'Declare at most 100 variants.');
+    if (!Array.isArray(value.variants) || value.variants.length > 300)
+        add('variants', 'Declare at most 300 variants.');
     const ids = new Set();
     const content = (v, path) => {
         if (!record(v)) {
@@ -72,6 +104,8 @@ function validatePersonaPersonalization(value) {
         for (const key of ['landingPage', 'chatEmbedConfig', 'chatApp'])
             if (v[key] !== undefined && !record(v[key]))
                 add(`${path}.${key}`, 'Expected a complete configuration object.');
+        if (v.copyOverrides !== undefined && (!record(v.copyOverrides) || Object.keys(v.copyOverrides).length > 250 || Object.entries(v.copyOverrides).some(([key, value]) => !isPresentationCopyPath(key) || !text(value, 4000))))
+            add(`${path}.copyOverrides`, 'Use at most 250 bounded human-facing string overrides at existing copy paths.');
     };
     const variant = (v, path, global = false) => {
         if (!record(v)) {
@@ -183,12 +217,15 @@ function selectPresentationLayers(config, visitor) {
     const audience = candidates.find(v => v.audience.type !== 'everyone');
     return { language, layers: [{ ...config.global, audience: { type: 'everyone' } }, ...(country ? [country] : []), ...(audience ? [audience] : [])] };
 }
-function materializePresentation(layers, language) {
-    let content = {};
+function materializePresentation(layers, language, base = {}) {
+    let content = { ...base };
     for (const layer of layers) {
         const translated = layer.translations?.[language] || layer.translations?.[language.split('-')[0]];
-        const next = { ...(layer.content || {}), ...(translated || {}) };
+        const { copyOverrides: sourceOverrides, ...source } = layer.content || {};
+        const { copyOverrides: translatedOverrides, ...translation } = translated || {};
+        const next = { ...source, ...translation };
         content = { ...content, ...next, ...(next.chatEmbedConfig ? { chatEmbedConfig: { ...content.chatEmbedConfig, ...next.chatEmbedConfig } } : {}) };
+        content = applyPresentationCopyOverrides(content, { ...sourceOverrides, ...translatedOverrides });
     }
     return content;
 }
