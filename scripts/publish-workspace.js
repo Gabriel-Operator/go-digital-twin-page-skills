@@ -480,7 +480,16 @@ function nodeFromDir({ repoRoot, id, kind, displayName, relPath, allocator }) {
   const liveRepositoryUrl = remoteUrlFor({ repoRoot, relPath });
   // A carried node's prior generated URL is the canonical binding. Do not silently bless
   // a checkout whose origin was changed after the last server reconciliation.
-  const repositoryUrl = priorNode?.repositoryUrl || liveRepositoryUrl;
+  let repositoryUrl = priorNode?.repositoryUrl || liveRepositoryUrl;
+  // Early local clones recorded their filesystem origin in portable authoring nodes.
+  // Recover only when the checked-out origin agrees with the declared network URL.
+  if (/^(?:\/|[a-z]:[\\/]|file:|\.{1,2}\/|~\/)/i.test(String(repositoryUrl || ''))) {
+    const declared = gitmodulesEntries({ repoRoot }).filter(entry => entry.path === relPath);
+    if (declared.length === 1 && /^(?:https?:\/\/|ssh:\/\/|git:\/\/|git@[^:]+:)/i.test(declared[0].url)
+      && sameRepositoryUrl({ left: liveRepositoryUrl, right: declared[0].url })) {
+      repositoryUrl = declared[0].url;
+    }
+  }
   const assetPath = PRIMARY_ASSET[kind];
   // The allocator is seeded from the prior manifest, so this returns the already-published
   // slug for a known remote and only allocates for a genuinely new one.

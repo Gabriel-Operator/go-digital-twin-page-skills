@@ -1492,7 +1492,7 @@ function validateWorkspaceDefinitions(app, issues) {
             for (const c of (Array.isArray(section?.components) ? section.components : [])) {
                 if (!isRecord(c))
                     continue;
-                if (c.actions !== undefined && (!Array.isArray(c.actions) || c.actions.length > 16 || c.actions.some((id) => !ids.has(id))))
+                if (c.actions !== undefined && (!Array.isArray(c.actions) || c.actions.length > (c.type === "playbook-list" ? 100 : 16) || c.actions.some((id) => !ids.has(id))))
                     issue("components.actions", "Select declared actions.");
                 const p = points.find(p => p.id === c.dataPoint);
                 if (typeof c.type === "string" && exports.CHAT_APP_COMPONENT_PROVIDERS[c.type] && (p?.source !== "workspace" || !exports.CHAT_APP_COMPONENT_PROVIDERS[c.type].includes(p.provider)))

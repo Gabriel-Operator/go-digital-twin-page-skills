@@ -5,6 +5,20 @@ description: Maintain git-backed AI Persona state and release quality via assets
 
 # AI Persona Skill
 
+Persona landing content is model-owned, including subtitles, navigation, every
+audience tab, prototype messages, artwork references, sample data, form options and
+initiation prompts. Keep it in the bound landing child and mirror it into
+`publishedConfig.landingPage`; do not add persona English fallback/default copy in
+platform components. Read the landing-page-builder model-owned content contract,
+then generate/validate split language assets with landing-page-translations before
+publishing a copy change. Preserve option IDs, operational commands and policy
+boundaries. The platform template supplies layout and interactions only.
+
+For authenticated persona workspace creation, switching, sharing, or agent setup, load the gateway skill topic `persona-workspaces` (canonical [`Persona Workspaces`](../persona-workspaces/SKILL.md)). Keep `personaWorkspaceId` separate from business/harness IDs. Each explicitly created owned workspace gets author-owned definition branches and private runtime bindings. Invitees join the existing workspace; joining creates no copy or branch, and it becomes their default only when none existed. Owner-only definition/member management, private Coach/profile/memory, owner-funded execution and workspace-scoped ROI are required. Keep the standard dashboard/sidebar composition.
+
+Follow the [workspace validation and packaging contract](../persona-workspaces/SKILL.md#validation) for real browser/API isolation checks, Docker shared-module inputs and explicit reporting of untested delivery/model paths.
+
+
 ## AgentCard policy
 
 Author global `publishedConfig.agentCardPolicy` in the Identity section: `enabled`, `cardSource` (`runner` or `author`), `requireHumanApproval: true`, and `restrictions`. Opt in each purchase slash command with `agentCard: { enabled: true, restrictions: {} }`. Restrictions support `maxAmountMinor`, `currencies`, `allowedMerchants`, `deniedMerchants`, and `allowRecurring` (default false). Command/runner rules only narrow the global policy. Card attachment and encrypted credentials live in runtime bindings, never this repository. Every purchase must use the workflow-builder `agent_card` node and mandatory human approval.
@@ -137,7 +151,7 @@ the maintained 37-language cache, mirror the compact manifest and every language
 the landing-page child into this parent repository, and commit child first. Keep the settings enabled even if a
 provider is temporarily unavailable; report missing cache coverage rather than removing
 the localization object. `translateConfig` is a different voice/assistant feature and
-must not be enabled as a substitute.
+must not be enabled as a substitute. Course explainer video and translated narration are persona assets as well. Read `course-video-generation` and `course-video-translations`, and keep those files in the persona repository rather than the operator marketplace.
 
 The required filename is `assets/landing-page.<language>.json`; market content uses
 `assets/markets/<country>/landing-page.json` plus one `landing-page.<language>.json` per
@@ -1007,3 +1021,8 @@ Test Neighborhood and Schools on iOS and Android with native controllers, geocod
 markers, radius previews/saves and mode changes. Report simulator fixture/API tests
 separately from live imagery and physical-device coverage; Google authorization
 failures must remain explicit blockers for live rendering verification.
+
+
+## Command governance and cost handoff
+
+For slash-command authoring, read [command governance and estimated cost](references/command-governance.md). Report warnings and the selected review profile with cost comparisons before handing off the command.
