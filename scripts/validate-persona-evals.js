@@ -61,6 +61,7 @@ for (const [suiteIndex, suite] of (value.suites || []).entries()) {
       warnings.push(`case ${testCase.id || caseIndex} has no runAs and will use the legacy author identity`);
     }
     if (!Array.isArray(testCase.requirementIds)) errors.push(`case ${testCase.id || caseIndex} requirementIds must be an array`);
+    if (!['golden', 'incomplete_input', 'edge', 'adversarial', 'approval', 'rejection', 'failure'].includes(testCase.category)) errors.push(`case ${testCase.id || caseIndex} category must match the runtime eval contract`);
     if (!Array.isArray(testCase.assertions)) errors.push(`case ${testCase.id || caseIndex} assertions must be an array`);
     for (const assertion of (testCase.assertions || [])) {
       if (assertion?.type === 'rubric' && assertion.blocking === true) errors.push(`case ${testCase.id}: advisory rubric assertions cannot authorize release`);

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 'use strict';
+const {validatePlaybookTeam}=require('./playbook-team.cjs');
 const { validatePersonalizationAsset } = require('./validate-personalization.cjs');
 
 /**
@@ -176,6 +177,7 @@ function validatePortableBundle({ repoRoot, registry: candidateRegistry }) {
   if (persona.schemaVersion !== 2 || !persona.resourceKey) {
     issues.push('assets/chat-config.json must be schema v2 with a resourceKey.');
   }
+  for(const command of persona.publishedConfig?.agentTopology?.slashCommands||[])if(command.team)issues.push(...validatePlaybookTeam(command.team).map(message=>`team:${command.id||command.trigger}: ${message}`));
   issues.push(...validatePersonalizationAsset(persona.publishedConfig?.personalization, { repoRoot, registry, persona }));
   auditLocalIds({ value: persona, kind: 'persona', issues });
 

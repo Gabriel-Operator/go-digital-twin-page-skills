@@ -98,7 +98,13 @@
     "outcome-check-in",
     "outcome-activity",
     "outcome-usage",
-    "outcome-signals"
+    "outcome-signals",
+    "meal-calendar",
+    "recipe-detail",
+    "nutrition-profile",
+    "shopping-list",
+    "inventory-list",
+    "course-publications"
   ],
   "dataPoints": {
     "sources": [
@@ -153,7 +159,13 @@
       "automations",
       "goals",
       "coach",
-      "data-feeds"
+      "data-feeds",
+      "kai-inventory",
+      "kai-recipes",
+      "kai-meal-plan",
+      "kai-nutrition",
+      "kai-shopping-list",
+      "learning"
     ],
     "executionViews": [
       "workflows",
@@ -183,7 +195,15 @@
       "automation.run",
       "automation.pause",
       "automation.delete",
-      "automation.test"
+      "automation.test",
+      "meal-plan.consume",
+      "recipe.save",
+      "shopping-list.add",
+      "shopping-list.update",
+      "nutrition.profile.save",
+      "nutrition.measurement.save",
+      "nutrition.activity.save",
+      "nutrition.target.save"
     ],
     "recipeCapture": {
       "workflowRef": "declared workflow",
@@ -262,5 +282,161 @@
     "localization": "experience-owned plain-text dictionaries, independent of the parent Chat App version",
     "referenceExample": "references/experience-example.json",
     "previewMutations": false
+  },
+  "learning": {
+    "block": "chatApp.learning (schemaVersion 3)",
+    "course": {
+      "required": [
+        "commands",
+        "tasks"
+      ],
+      "commands": "1-8 of { commandId, audience: parent|school, visibility? }",
+      "tasks": {
+        "required": [
+          "brief",
+          "script",
+          "quiz",
+          "approve",
+          "publish"
+        ],
+        "optional": [
+          "film",
+          "narration",
+          "frames"
+        ]
+      },
+      "intake": [
+        "ageBand",
+        "accessMode"
+      ],
+      "ageBands": "1-12 labels of at most 20 characters",
+      "minimumMastery": "0 to 1, default 0.7",
+      "visibilities": [
+        "link",
+        "family",
+        "class",
+        "private"
+      ]
+    },
+    "links": {
+      "roles": [
+        "parent",
+        "teacher"
+      ],
+      "inviteTtlDays": "1-30, default 7",
+      "eraseRoles": [
+        "parent",
+        "teacher"
+      ]
+    },
+    "views": {
+      "course-publications": "publications",
+      "verification-queue": "verifications",
+      "learning-links": "links",
+      "learning-home": "home",
+      "badge-shelf": "badges"
+    },
+    "reference": "references/learning-courses.md"
+  },
+  "routes": {
+    "block": "chatApp.routes (schemaVersion 3)",
+    "max": 12,
+    "route": {
+      "required": [
+        "id",
+        "path",
+        "title",
+        "access",
+        "template",
+        "components"
+      ],
+      "path": "up to four segments; :name captures one; first segment not 'report'",
+      "access": [
+        "public",
+        "signed-in"
+      ],
+      "template": [
+        "focus",
+        "page"
+      ],
+      "components": "1-12",
+      "surface": "web (default) or mobile; a mobile route has only id, surface, title, components"
+    },
+    "components": {
+      "heading": [
+        "text",
+        "level"
+      ],
+      "text": [
+        "text"
+      ],
+      "image": [
+        "src",
+        "alt",
+        "width"
+      ],
+      "link-button": [
+        "label",
+        "href (mobile: route:<id> or https)",
+        "variant"
+      ],
+      "course-player": [
+        "param",
+        "copy"
+      ],
+      "certificate": [
+        "param",
+        "copy"
+      ]
+    },
+    "address": "/persona/<slug>/<path>",
+    "reference": "references/persona-routes.md",
+    "mobileComponents": {
+      "heading": [
+        "text",
+        "level"
+      ],
+      "text": [
+        "text"
+      ],
+      "image": [
+        "src",
+        "alt",
+        "width"
+      ],
+      "link-button": [
+        "label",
+        "href",
+        "variant"
+      ],
+      "qr-scanner": [
+        "openRoute",
+        "hint"
+      ],
+      "persona-web-route": [
+        "path | source (scanned|app)",
+        "view",
+        "tab",
+        "sectionTab"
+      ]
+    }
+  },
+  "mobile": {
+    "block": "chatApp.mobile (schemaVersion 3)",
+    "home": "id of a mobile route",
+    "menu": "1-5 of { id, label, icon, routeId }",
+    "icons": [
+      "home",
+      "qr-code",
+      "camera",
+      "book",
+      "badge",
+      "chat",
+      "info",
+      "user",
+      "settings"
+    ],
+    "minimumAppVersion": "x.y.z, optional",
+    "reference": "references/persona-routes.md#mobile-companion"
   }
 }
